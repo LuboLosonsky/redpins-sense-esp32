@@ -1,0 +1,21 @@
+# PlatformIO
+.pio/
+libdeps/
+
+# Build artifacts
+build/
+*.o
+*.bin
+*.elf
+*.map
+*.hex
+*.a
+
+# ESP-IDF specific
+sdkconfig.old
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+*.swp

@@ -1,0 +1,6 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        2M,
+# SPIFFS subtype sa v IDF bežne používa ako generic pre LittleFS/SPIFFS/FAT
+storage,  data, spiffs,  ,        1M,
