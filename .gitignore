@@ -1,6 +1,7 @@
 # PlatformIO
 .pio/
 libdeps/
+managed_components/
 
 # Build artifacts
 build/

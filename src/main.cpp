@@ -1,13 +1,43 @@
 #include <stdio.h>
 
+#include "app_config.h"
+#include "ble_server.h"
+#include "display_hal.h"
+#include "driver/gpio.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "sensor_core.h"
+#include "storage.h"
+#include "weather_client.h"
+#include "wifi_scanner.h"
 
 static const char* TAG = "REDPINS_CORE";
 
+#define LCD_BLK_PIN (gpio_num_t) PIN_NUM_BCKL  // Prepojené na display_hal.h
+
+extern esp_lcd_panel_handle_t panel_handle;  // Natiahnutie handlu z display_hal
+
+extern "C" void gui_task(void* arg);
+
 extern "C" void app_main(void) {
+    // Zanshin: Počkáme 3 sekundy, kým Windows pripojí COM port
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    ESP_LOGI(TAG, "=====================================================");
+    ESP_LOGI(TAG, "========== REDPINS SENSE INIT ZACINA ==============");
+    ESP_LOGI(TAG, "=====================================================");
+
+    // Zanshin: Zhasnutie bieleho indikátora (jednoduchá LED na GPIO 8)
+    // Tento pin je "strapping pin", bootloader ho nechá v HIGH stave, čo
+    // rozsvieti LED. Prevezmeme nad ním kontrolu a zhasneme ho.
+    gpio_reset_pin((gpio_num_t)8);
+    gpio_set_direction((gpio_num_t)8, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)8, 1);  // 1 = zhasnúť (LED je zapojená na 3.3V,
+                                       // zhasína sa privedením HIGH)
+
     // 1. Inicializácia NVS (Kritické pre ukladanie kalibrácie, WiFi a
     // fungovanie BLE)
     esp_err_t ret = nvs_flash_init();
@@ -20,23 +50,42 @@ extern "C" void app_main(void) {
 
     ESP_LOGI(TAG, "NVS Inicializované. Redpins Sense C6 (RCP v2.1) bootuje.");
 
-    // TODO: 2. Mount LittleFS pre perzistenciu (config.json, CSV logy)
+    // 2. Mount LittleFS pre perzistenciu (config.json, CSV logy)
+    if (storage_init() != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Kritická chyba: Storage sa nepodarilo spustiť. Systém môže "
+                 "byť nestabilný.");
+        // Zámerne nezastavujeme beh, BLE stack sa musí spustiť pre diagnostiku
+    }
 
-    // TODO: 3. Hardvérová abstrakcia (SPI pre LCD, RMT pre RGB LED, I2C/SPI pre
-    // senzory)
+    // Načítanie aplikačnej konfigurácie a kalibračných dát z LittleFS
+    app_config_init();
 
-    // TODO: 4. Inicializácia BLE (NimBLE stack) - Expozícia A101-A104
-    // charakteristík
+    // 3. Inicializácia senzorov (DHT11)
+    sensor_core_init();
+
+    // 3. Hardvérová abstrakcia (SPI pre LCD)
+    display_hal_init();
+
+    // Zanshin: Odstránili sme synchrónne testovacie kreslenie v main(),
+    // pretože preťažovalo asynchrónnu DMA frontu. Vykresľovanie od
+    // tohto momentu obsluhuje výhradne gui_task s dodržaním časovania.
+
+    // 4. Inicializácia BLE (NimBLE stack) - Expozícia RCP v2.1
+    ble_server_init();
 
     // 5. Registrácia FreeRTOS taskov
-    /*
-    xTaskCreate(sensor_task, "sensor_task", 4096, NULL, 5, NULL);
-    xTaskCreate(gui_task, "gui_task", 4096, NULL, 2, NULL);
-    */
+    sensor_core_start_task();
+    weather_client_init();
 
-    // 6. Hlavná slučka (Wu Wei - žiadna práca navyše, uvoľnenie prostriedkov)
+    xTaskCreate(gui_task, "gui_task", 4096, NULL, 2, NULL);
+
+    // 6. Pokus o automatické pripojenie na známu Wi-Fi sieť z NVS
+    wifi_scanner_auto_connect();
+
+    // 7. Hlavná slučka (Wu Wei - žiadna práca navyše, uvoľnenie prostriedkov)
     while (true) {
         // Systém prechádza do riadenia cez FreeRTOS eventy a prerušenia
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
