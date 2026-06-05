@@ -729,718 +729,828 @@ extern "C" void gui_task(void* arg) {
 
                         // --- RÁMČEK 1: Počasie a Teplota ---
                         int bx_t = 10;
-                        gui_draw_round_rect_empty(bx_t, box_y, box_w, box_h, 4,
-                                                  WEATHER_DESC_FG);
-                        gui_draw_string(bx_t + 15, box_y + 15,
-                                        get_weather_desc(wid), WEATHER_DESC_FG,
-                                        THEME_BG, 1);
+                        // gui_draw_round_rect_empty(bx_t, box_y, box_w, box_h,
+                        // 4,
+                        //                           WEATHER_DESC_FG);
+                        // gui_draw_string(bx_t + 15, box_y + 15,
+                        //                 get_weather_desc(wid),
+                        //                 WEATHER_DESC_FG, THEME_BG, 1);
                         int bx_h = 165;
 
-                        // Zanshin: Detekcia typu ikony podľa OWM kódu
-                        // Detekcia typu ikony podľa OWM kódu
-                        const uint8_t* icon = w_cloud;
-                        uint16_t i_color = ICON_CLOUD_FG;
+                        // // Zanshin: Detekcia typu ikony podľa OWM kódu
+                        // // Detekcia typu ikony podľa OWM kódu
+                        // const uint8_t* icon = w_cloud;
+                        // uint16_t i_color = ICON_CLOUD_FG;
 
-                        if (wid >= 200 && wid < 300) {
-                            icon = w_storm;
-                            i_color = ICON_STORM_FG;
-                        } else if (wid >= 300 && wid < 600) {
-                            icon = w_rain;
-                            i_color = ICON_RAIN_FG;
-                        } else if (wid >= 600 && wid < 700) {
-                            icon = w_snow;
-                            i_color = ICON_SNOW_FG;
-                        } else if (wid == 800) {
-                            icon = w_sun;
-                            i_color = ICON_SUN_FG;
-                        } else if (wid > 800) {
-                            icon = w_cloud;
-                            i_color = ICON_CLOUD_FG;
-                            if (force_redraw) {
-                                gui_draw_round_rect_empty(bx_t, box_y, box_w,
-                                                          box_h, 4,
-                                                          WEATHER_DESC_FG);
-                                gui_draw_round_rect_empty(bx_h, box_y, box_w,
-                                                          box_h, 4,
-                                                          WEATHER_HUM_FG);
-                                gui_draw_string(bx_h + 15, box_y + 15,
-                                                "VLHKOST", WEATHER_HUM_FG,
+                        // if (wid >= 200 && wid < 300) {
+                        //     icon = w_storm;
+                        //     i_color = ICON_STORM_FG;
+                        // } else if (wid >= 300 && wid < 600) {
+                        //     icon = w_rain;
+                        //     i_color = ICON_RAIN_FG;
+                        // } else if (wid >= 600 && wid < 700) {
+                        //     icon = w_snow;
+                        //     i_color = ICON_SNOW_FG;
+                        // } else if (wid == 800) {
+                        //     icon = w_sun;
+                        //     i_color = ICON_SUN_FG;
+                        // } else if (wid > 800) {
+                        //     icon = w_cloud;
+                        //     i_color = ICON_CLOUD_FG;
+                        //     if (force_redraw) {
+                        //         gui_draw_round_rect_empty(bx_t, box_y, box_w,
+                        //                                   box_h, 4,
+                        //                                   WEATHER_DESC_FG);
+                        //         gui_draw_round_rect_empty(bx_h, box_y, box_w,
+                        //                                   box_h, 4,
+                        //                                   WEATHER_HUM_FG);
+                        //         gui_draw_string(bx_h + 15, box_y + 15,
+                        //                         "VLHKOST", WEATHER_HUM_FG,
+                        //                         THEME_BG, 1);
+                        //         gui_draw_icon_16x16(
+                        //             bx_h + box_w - 25, box_y + 10, i_drop,
+                        //             WEATHER_HUM_FG, THEME_BG, 1);
+                        //     }
+
+                        //     // 32x32px Ikona vpravo hore
+                        //     gui_draw_icon_16x16(bx_t + box_w - 40, box_y + 8,
+                        //                         icon, i_color, THEME_BG, 2);
+                        //     if (force_redraw || wt != cache_wt ||
+                        //         wid != cache_wid) {
+                        //         gui_draw_rect(bx_t + 15, box_y + 15, 80, 16,
+                        //                       THEME_BG);
+                        //         gui_draw_string(bx_t + 15, box_y + 15,
+                        //                         get_weather_desc(wid),
+                        //                         WEATHER_DESC_FG, THEME_BG,
+                        //                         1);
+
+                        //         format_sensor_val(wt, i_buf, d_buf);
+                        //         int len_t = strlen(i_buf);
+                        //         int px_t = bx_t + 15;
+                        //         const uint8_t* icon = w_cloud;
+                        //         uint16_t i_color = ICON_CLOUD_FG;
+                        //         if (wid >= 200 && wid < 300) {
+                        //             icon = w_storm;
+                        //             i_color = ICON_STORM_FG;
+                        //         } else if (wid >= 300 && wid < 600) {
+                        //             icon = w_rain;
+                        //             i_color = ICON_RAIN_FG;
+                        //         } else if (wid >= 600 && wid < 700) {
+                        //             icon = w_snow;
+                        //             i_color = ICON_SNOW_FG;
+                        //         } else if (wid == 800) {
+                        //             icon = w_sun;
+                        //             i_color = ICON_SUN_FG;
+                        //         } else if (wid > 800) {
+                        //             icon = w_cloud;
+                        //             i_color = ICON_CLOUD_FG;
+                        //         }
+
+                        //         // Zanshin: Vymazanie priestoru pred
+                        //         vykreslením gui_draw_rect(bx_t + 15, box_y +
+                        //         65, 125, 32,
+                        //                       THEME_BG);
+                        //         gui_draw_rect(bx_t + box_w - 40, box_y + 8,
+                        //         32,
+                        //                       32, THEME_BG);
+                        //         gui_draw_icon_16x16(bx_t + box_w - 40,
+                        //                             box_y + 8, icon, i_color,
+                        //                             THEME_BG, 2);
+
+                        //         if (len_t == 1) px_t += 10;
+                        //         format_sensor_val(wt, i_buf, d_buf);
+                        //         int len_t = strlen(i_buf);
+                        //         int px_t = bx_t + 15;
+                        //         gui_draw_rect(bx_t + 15, box_y + 65, 125, 32,
+                        //                       THEME_BG);
+                        //         if (len_t == 1) px_t += 10;
+
+                        //         // Výška a baseline rovnaká ako na Dashboarde
+                        //         gui_draw_string(px_t, box_y + 65, i_buf,
+                        //                         WEATHER_TEMP_FG, THEME_BG,
+                        //                         4);
+                        //         int dx_t = px_t + (len_t * 32);
+                        //         gui_draw_string(dx_t, box_y + 81, d_buf,
+                        //                         COLOR_LIGHT_GRAY, THEME_BG,
+                        //                         2);
+                        //         gui_draw_string(px_t, box_y + 65, i_buf,
+                        //                         WEATHER_TEMP_FG, THEME_BG,
+                        //                         4);
+                        //         int dx_t = px_t + (len_t * 32);
+                        //         gui_draw_string(dx_t, box_y + 81, d_buf,
+                        //                         COLOR_LIGHT_GRAY, THEME_BG,
+                        //                         2);
+
+                        //         int ux_t = dx_t + 36;
+                        //         gui_draw_rect(ux_t, box_y + 65, 4, 4,
+                        //                       WEATHER_DESC_FG);
+                        //         gui_draw_rect(ux_t + 1, box_y + 66, 2, 2,
+                        //                       THEME_BG);
+                        //         gui_draw_string(ux_t + 6, box_y + 65, "C",
+                        //                         WEATHER_DESC_FG, THEME_BG,
+                        //                         2);
+                        //         int ux_t = dx_t + 36;
+                        //         gui_draw_rect(ux_t, box_y + 65, 4, 4,
+                        //                       WEATHER_DESC_FG);
+                        //         gui_draw_rect(ux_t + 1, box_y + 66, 2, 2,
+                        //                       THEME_BG);
+                        //         gui_draw_string(ux_t + 6, box_y + 65, "C",
+                        //                         WEATHER_DESC_FG, THEME_BG,
+                        //                         2);
+
+                        //         cache_wt = wt;
+                        //         cache_wid = wid;
+                        //     }
+
+                        //     // --- ZANSHIN: Zobrazenie AQI (Smog) ---
+                        //     int aqi = 0;
+                        //     float pm25 = 0;
+                        //     if (weather_get_aqi(&aqi, &pm25)) {
+                        //         const char* aqi_str = "OVZDUSIE: NEZNAMO";
+                        //         uint16_t aqi_color = COLOR_LIGHT_GRAY;
+                        //         if (force_redraw || aqi != cache_aqi ||
+                        //             pm25 != cache_pm25) {
+                        //             const char* aqi_str = "OVZDUSIE:
+                        //             NEZNAMO"; uint16_t aqi_color =
+                        //             COLOR_LIGHT_GRAY;
+
+                        //             if (aqi <= 2) {
+                        //                 aqi_str = "OVZDUSIE: CISTE";
+                        //                 aqi_color = SYS_WIFI_OK_FG;
+                        //             } else if (aqi == 3) {
+                        //                 aqi_str = "OVZDUSIE: ZHORSE.";
+                        //                 aqi_color = COLOR_LIGHT_GRAY;
+                        //             } else {
+                        //                 aqi_str = "OVZDUSIE: SMOG";
+                        //                 aqi_color = SYS_WIFI_ERR_FG;
+                        //                 if (aqi <= 2) {
+                        //                     aqi_str = "OVZDUSIE: CISTE";
+                        //                     aqi_color = SYS_WIFI_OK_FG;
+                        //                 } else if (aqi == 3) {
+                        //                     aqi_str = "OVZDUSIE: ZHORSE.";
+                        //                     aqi_color = COLOR_LIGHT_GRAY;
+                        //                 } else {
+                        //                     aqi_str = "OVZDUSIE: SMOG";
+                        //                     aqi_color = SYS_WIFI_ERR_FG;
+                        //                 }
+
+                        //                 gui_draw_rect(bx_t + 15, box_y + 105,
+                        //                               125, 24, THEME_BG);
+                        //                 gui_draw_string(bx_t + 15, box_y +
+                        //                 105,
+                        //                                 aqi_str, aqi_color,
+                        //                                 THEME_BG, 1);
+                        //                 char pm_buf[32];
+                        //                 snprintf(pm_buf, sizeof(pm_buf),
+                        //                          "- PM2.5: %.1f ug", pm25);
+                        //                 gui_draw_string(
+                        //                     bx_t + 15, box_y + 117, pm_buf,
+                        //                     COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                        //                 cache_aqi = aqi;
+                        //                 cache_pm25 = pm25;
+                        //             }
+
+                        //             // Zanshin: Vymazanie priestoru pre AQI
+                        //             text gui_draw_rect(bx_t + 15, box_y +
+                        //             105, 125,
+                        //                           24, THEME_BG);
+
+                        //             gui_draw_string(bx_t + 15, box_y + 105,
+                        //                             aqi_str, aqi_color,
+                        //                             THEME_BG, 1);
+                        //             char pm_buf[32];
+                        //             snprintf(pm_buf, sizeof(pm_buf),
+                        //                      "- PM2.5: %.1f ug", pm25);
+                        //             gui_draw_string(bx_t + 15, box_y + 117,
+                        //                             pm_buf, COLOR_LIGHT_GRAY,
+                        //                             THEME_BG, 1);
+                        //         }
+
+                        //         // --- RÁMČEK 2: Vlhkosť a Tlak ---
+                        //         int bx_h = 165;
+                        //         gui_draw_round_rect_empty(bx_h, box_y, box_w,
+                        //                                   box_h, 4,
+                        //                                   WEATHER_HUM_FG);
+                        //         gui_draw_string(bx_h + 15, box_y + 15,
+                        //                         "VLHKOST", WEATHER_HUM_FG,
+                        //                         THEME_BG, 1);
+                        //         gui_draw_icon_16x16(
+                        //             bx_h + box_w - 25, box_y + 10, i_drop,
+                        //             WEATHER_HUM_FG, THEME_BG, 1);
+                        //         if (force_redraw || wh != cache_wh ||
+                        //             wp != cache_wp) {
+                        //             snprintf(i_buf, sizeof(i_buf), "%d", wh);
+                        //             int len_h = strlen(i_buf);
+                        //             int px_h = bx_h + 15;
+
+                        //             // Vlhkosť z API (bez desatín)
+                        //             snprintf(i_buf, sizeof(i_buf), "%d", wh);
+                        //             int len_h = strlen(i_buf);
+                        //             int px_h = bx_h + 15;
+                        //             gui_draw_rect(bx_h + 15, box_y + 65, 125,
+                        //                           32, THEME_BG);
+                        //             if (len_h == 1) px_h += 10;
+
+                        //             gui_draw_string(px_h, box_y + 65, i_buf,
+                        //                             WEATHER_TEMP_FG,
+                        //                             THEME_BG, 4);
+                        //             int dx_h = px_h + (len_h * 32);
+                        //             gui_draw_string(dx_h + 4, box_y + 81,
+                        //             "%",
+                        //                             WEATHER_HUM_FG, THEME_BG,
+                        //                             2);
+
+                        //             // Zanshin: Vymazanie priestoru pred
+                        //             // vykreslením
+                        //             gui_draw_rect(bx_h + 15, box_y + 65, 125,
+                        //                           32, THEME_BG);
+                        //             gui_draw_rect(bx_h + 15, box_y + 105,
+                        //             125,
+                        //                           16, THEME_BG);
+                        //             char p_buf[16];
+                        //             snprintf(p_buf, sizeof(p_buf),
+                        //                      "TLAK: %d hPa", wp);
+                        //             gui_draw_string(bx_h + 15, box_y + 105,
+                        //                             p_buf, COLOR_LIGHT_GRAY,
+                        //                             THEME_BG, 1);
+
+                        //             cache_wh = wh;
+                        //             cache_wp = wp;
+                        //         }
+
+                        //         if (len_h == 1) px_h += 10;
+
+                        //         // Prísne dodržaná baseline (Y = box_y + 65)
+                        //         gui_draw_string(px_h, box_y + 65, i_buf,
+                        //                         WEATHER_TEMP_FG, THEME_BG,
+                        //                         4);
+                        //         int dx_h = px_h + (len_h * 32);
+                        //         gui_draw_string(dx_h + 4, box_y + 81, "%",
+                        //                         WEATHER_HUM_FG, THEME_BG, 2);
+
+                        //         // Menší doplnkový text pre tlak
+                        //         char p_buf[16];
+                        //         snprintf(p_buf, sizeof(p_buf), "TLAK: %d
+                        //         hPa",
+                        //                  wp);
+                        //         gui_draw_string(bx_h + 15, box_y + 105,
+                        //         p_buf,
+                        //                         COLOR_LIGHT_GRAY, THEME_BG,
+                        //                         1);
+
+                        //     } else {
+                        //         gui_draw_string(10, 30, "API ERROR /
+                        //         WAITING:",
+                        //                         WEATHER_TITLE_FG, THEME_BG,
+                        //                         2);
+                        //         gui_draw_string(10, 60, "Cakaj na sync...",
+                        //                         WEATHER_TEMP_FG, THEME_BG,
+                        //                         2);
+                        //         if (force_redraw) {
+                        //             gui_draw_string(
+                        //                 10, 30, "API ERROR / WAITING:",
+                        //                 WEATHER_TITLE_FG, THEME_BG, 2);
+                        //             gui_draw_string(10, 60, "Cakaj na
+                        //             sync...",
+                        //                             WEATHER_TEMP_FG,
+                        //                             THEME_BG, 2);
+                        //         }
+                        //     }
+                        if (force_redraw) {
+                            gui_draw_round_rect_empty(bx_t, box_y, box_w, box_h,
+                                                      4, WEATHER_DESC_FG);
+                            gui_draw_round_rect_empty(bx_h, box_y, box_w, box_h,
+                                                      4, WEATHER_HUM_FG);
+                            gui_draw_string(bx_h + 15, box_y + 15, "VLHKOST",
+                                            WEATHER_HUM_FG, THEME_BG, 1);
+                            gui_draw_icon_16x16(bx_h + box_w - 25, box_y + 10,
+                                                i_drop, WEATHER_HUM_FG,
                                                 THEME_BG, 1);
-                                gui_draw_icon_16x16(
-                                    bx_h + box_w - 25, box_y + 10, i_drop,
-                                    WEATHER_HUM_FG, THEME_BG, 1);
+                        }
+
+                        if (force_redraw || wt != cache_wt ||
+                            wid != cache_wid) {
+                            gui_draw_rect(bx_t + 15, box_y + 15, 80, 16,
+                                          THEME_BG);
+                            gui_draw_string(bx_t + 15, box_y + 15,
+                                            get_weather_desc(wid),
+                                            WEATHER_DESC_FG, THEME_BG, 1);
+
+                            const uint8_t* icon = w_cloud;
+                            uint16_t i_color = ICON_CLOUD_FG;
+                            if (wid >= 200 && wid < 300) {
+                                icon = w_storm;
+                                i_color = ICON_STORM_FG;
+                            } else if (wid >= 300 && wid < 600) {
+                                icon = w_rain;
+                                i_color = ICON_RAIN_FG;
+                            } else if (wid >= 600 && wid < 700) {
+                                icon = w_snow;
+                                i_color = ICON_SNOW_FG;
+                            } else if (wid == 800) {
+                                icon = w_sun;
+                                i_color = ICON_SUN_FG;
+                            } else if (wid > 800) {
+                                icon = w_cloud;
+                                i_color = ICON_CLOUD_FG;
                             }
 
-                            // 32x32px Ikona vpravo hore
+                            gui_draw_rect(bx_t + box_w - 40, box_y + 8, 32, 32,
+                                          THEME_BG);
                             gui_draw_icon_16x16(bx_t + box_w - 40, box_y + 8,
                                                 icon, i_color, THEME_BG, 2);
-                            if (force_redraw || wt != cache_wt ||
-                                wid != cache_wid) {
-                                gui_draw_rect(bx_t + 15, box_y + 15, 80, 16,
-                                              THEME_BG);
-                                gui_draw_string(bx_t + 15, box_y + 15,
-                                                get_weather_desc(wid),
-                                                WEATHER_DESC_FG, THEME_BG, 1);
 
-                                format_sensor_val(wt, i_buf, d_buf);
-                                int len_t = strlen(i_buf);
-                                int px_t = bx_t + 15;
-                                const uint8_t* icon = w_cloud;
-                                uint16_t i_color = ICON_CLOUD_FG;
-                                if (wid >= 200 && wid < 300) {
-                                    icon = w_storm;
-                                    i_color = ICON_STORM_FG;
-                                } else if (wid >= 300 && wid < 600) {
-                                    icon = w_rain;
-                                    i_color = ICON_RAIN_FG;
-                                } else if (wid >= 600 && wid < 700) {
-                                    icon = w_snow;
-                                    i_color = ICON_SNOW_FG;
-                                } else if (wid == 800) {
-                                    icon = w_sun;
-                                    i_color = ICON_SUN_FG;
-                                } else if (wid > 800) {
-                                    icon = w_cloud;
-                                    i_color = ICON_CLOUD_FG;
-                                }
+                            format_sensor_val(wt, i_buf, d_buf);
+                            int len_t = strlen(i_buf);
+                            int px_t = bx_t + 15;
+                            gui_draw_rect(bx_t + 15, box_y + 65, 125, 32,
+                                          THEME_BG);
+                            if (len_t == 1) px_t += 10;
 
-                                // Zanshin: Vymazanie priestoru pred vykreslením
-                                gui_draw_rect(bx_t + 15, box_y + 65, 125, 32,
-                                              THEME_BG);
-                                gui_draw_rect(bx_t + box_w - 40, box_y + 8, 32,
-                                              32, THEME_BG);
-                                gui_draw_icon_16x16(bx_t + box_w - 40,
-                                                    box_y + 8, icon, i_color,
-                                                    THEME_BG, 2);
+                            gui_draw_string(px_t, box_y + 65, i_buf,
+                                            WEATHER_TEMP_FG, THEME_BG, 4);
+                            int dx_t = px_t + (len_t * 32);
+                            gui_draw_string(dx_t, box_y + 81, d_buf,
+                                            COLOR_LIGHT_GRAY, THEME_BG, 2);
 
-                                if (len_t == 1) px_t += 10;
-                                format_sensor_val(wt, i_buf, d_buf);
-                                int len_t = strlen(i_buf);
-                                int px_t = bx_t + 15;
-                                gui_draw_rect(bx_t + 15, box_y + 65, 125, 32,
-                                              THEME_BG);
-                                if (len_t == 1) px_t += 10;
+                            int ux_t = dx_t + 36;
+                            gui_draw_rect(ux_t, box_y + 65, 4, 4,
+                                          WEATHER_DESC_FG);
+                            gui_draw_rect(ux_t + 1, box_y + 66, 2, 2, THEME_BG);
+                            gui_draw_string(ux_t + 6, box_y + 65, "C",
+                                            WEATHER_DESC_FG, THEME_BG, 2);
 
-                                // Výška a baseline rovnaká ako na Dashboarde
-                                gui_draw_string(px_t, box_y + 65, i_buf,
-                                                WEATHER_TEMP_FG, THEME_BG, 4);
-                                int dx_t = px_t + (len_t * 32);
-                                gui_draw_string(dx_t, box_y + 81, d_buf,
-                                                COLOR_LIGHT_GRAY, THEME_BG, 2);
-                                gui_draw_string(px_t, box_y + 65, i_buf,
-                                                WEATHER_TEMP_FG, THEME_BG, 4);
-                                int dx_t = px_t + (len_t * 32);
-                                gui_draw_string(dx_t, box_y + 81, d_buf,
-                                                COLOR_LIGHT_GRAY, THEME_BG, 2);
+                            cache_wt = wt;
+                            cache_wid = wid;
+                        }
 
-                                int ux_t = dx_t + 36;
-                                gui_draw_rect(ux_t, box_y + 65, 4, 4,
-                                              WEATHER_DESC_FG);
-                                gui_draw_rect(ux_t + 1, box_y + 66, 2, 2,
-                                              THEME_BG);
-                                gui_draw_string(ux_t + 6, box_y + 65, "C",
-                                                WEATHER_DESC_FG, THEME_BG, 2);
-                                int ux_t = dx_t + 36;
-                                gui_draw_rect(ux_t, box_y + 65, 4, 4,
-                                              WEATHER_DESC_FG);
-                                gui_draw_rect(ux_t + 1, box_y + 66, 2, 2,
-                                              THEME_BG);
-                                gui_draw_string(ux_t + 6, box_y + 65, "C",
-                                                WEATHER_DESC_FG, THEME_BG, 2);
-
-                                cache_wt = wt;
-                                cache_wid = wid;
-                            }
-
-                            // --- ZANSHIN: Zobrazenie AQI (Smog) ---
-                            int aqi = 0;
-                            float pm25 = 0;
-                            if (weather_get_aqi(&aqi, &pm25)) {
+                        int aqi = 0;
+                        float pm25 = 0;
+                        if (weather_get_aqi(&aqi, &pm25)) {
+                            if (force_redraw || aqi != cache_aqi ||
+                                pm25 != cache_pm25) {
                                 const char* aqi_str = "OVZDUSIE: NEZNAMO";
                                 uint16_t aqi_color = COLOR_LIGHT_GRAY;
-                                if (force_redraw || aqi != cache_aqi ||
-                                    pm25 != cache_pm25) {
-                                    const char* aqi_str = "OVZDUSIE: NEZNAMO";
-                                    uint16_t aqi_color = COLOR_LIGHT_GRAY;
 
-                                    if (aqi <= 2) {
-                                        aqi_str = "OVZDUSIE: CISTE";
-                                        aqi_color = SYS_WIFI_OK_FG;
-                                    } else if (aqi == 3) {
-                                        aqi_str = "OVZDUSIE: ZHORSE.";
-                                        aqi_color = COLOR_LIGHT_GRAY;
-                                    } else {
-                                        aqi_str = "OVZDUSIE: SMOG";
-                                        aqi_color = SYS_WIFI_ERR_FG;
-                                        if (aqi <= 2) {
-                                            aqi_str = "OVZDUSIE: CISTE";
-                                            aqi_color = SYS_WIFI_OK_FG;
-                                        } else if (aqi == 3) {
-                                            aqi_str = "OVZDUSIE: ZHORSE.";
-                                            aqi_color = COLOR_LIGHT_GRAY;
-                                        } else {
-                                            aqi_str = "OVZDUSIE: SMOG";
-                                            aqi_color = SYS_WIFI_ERR_FG;
-                                        }
+                                if (aqi <= 2) {
+                                    aqi_str = "OVZDUSIE: CISTE";
+                                    aqi_color = SYS_WIFI_OK_FG;
+                                } else if (aqi == 3) {
+                                    aqi_str = "OVZDUSIE: ZHORSE.";
+                                    aqi_color = COLOR_LIGHT_GRAY;
+                                } else {
+                                    aqi_str = "OVZDUSIE: SMOG";
+                                    aqi_color = SYS_WIFI_ERR_FG;
+                                }
 
-                                        gui_draw_rect(bx_t + 15, box_y + 105,
-                                                      125, 24, THEME_BG);
-                                        gui_draw_string(bx_t + 15, box_y + 105,
-                                                        aqi_str, aqi_color,
-                                                        THEME_BG, 1);
-                                        char pm_buf[32];
-                                        snprintf(pm_buf, sizeof(pm_buf),
-                                                 "- PM2.5: %.1f ug", pm25);
-                                        gui_draw_string(
-                                            bx_t + 15, box_y + 117, pm_buf,
+                                gui_draw_rect(bx_t + 15, box_y + 105, 125, 24,
+                                              THEME_BG);
+                                gui_draw_string(bx_t + 15, box_y + 105, aqi_str,
+                                                aqi_color, THEME_BG, 1);
+                                char pm_buf[32];
+                                snprintf(pm_buf, sizeof(pm_buf),
+                                         "- PM2.5: %.1f ug", pm25);
+                                gui_draw_string(bx_t + 15, box_y + 117, pm_buf,
+                                                COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                                cache_aqi = aqi;
+                                cache_pm25 = pm25;
+                            }
+                        }
+
+                        if (force_redraw || wh != cache_wh || wp != cache_wp) {
+                            snprintf(i_buf, sizeof(i_buf), "%d", wh);
+                            int len_h = strlen(i_buf);
+                            int px_h = bx_h + 15;
+
+                            gui_draw_rect(bx_h + 15, box_y + 65, 125, 32,
+                                          THEME_BG);
+                            if (len_h == 1) px_h += 10;
+
+                            gui_draw_string(px_h, box_y + 65, i_buf,
+                                            WEATHER_TEMP_FG, THEME_BG, 4);
+                            int dx_h = px_h + (len_h * 32);
+                            gui_draw_string(dx_h + 4, box_y + 81, "%",
+                                            WEATHER_HUM_FG, THEME_BG, 2);
+
+                            gui_draw_rect(bx_h + 15, box_y + 105, 125, 16,
+                                          THEME_BG);
+                            char p_buf[16];
+                            snprintf(p_buf, sizeof(p_buf), "TLAK: %d hPa", wp);
+                            gui_draw_string(bx_h + 15, box_y + 105, p_buf,
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
 
-                                        cache_aqi = aqi;
-                                        cache_pm25 = pm25;
+                            cache_wh = wh;
+                            cache_wp = wp;
+                        }
+                    } else {
+                        if (force_redraw) {
+                            gui_draw_string(10, 30, "API ERROR / WAITING:",
+                                            WEATHER_TITLE_FG, THEME_BG, 2);
+                            gui_draw_string(10, 60, "Cakaj na sync...",
+                                            WEATHER_TEMP_FG, THEME_BG, 2);
+                        }
+                    }
+                }
+                // --- OBRAZOVKA 2: Systém a Nastavenia ---
+                else if (current_screen == 3) {
+                    app_config_t* cfg = app_config_get();
+                    int sy = 30;
+
+                    gui_draw_string(10, sy, "ZARIADENIE:", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+                    gui_draw_string(10, sy + 12, cfg->alias, SYS_VALUE_FG,
+                                    THEME_BG, 1);
+                    sy += 30;
+
+                    gui_draw_string(10, sy, "WIFI STATUS:", SYS_LABEL_WIFI_FG,
+                                    THEME_BG, 1);
+                    if (wifi_scanner_is_connected()) {
+                        char ssid[33];
+                        char ip[16];
+                        wifi_scanner_get_ssid(ssid, sizeof(ssid));
+                        wifi_scanner_get_ip(ip, sizeof(ip));
+                        char wifi_info[64];
+                        snprintf(wifi_info, sizeof(wifi_info), "%s", ssid);
+                        gui_draw_string(10, sy + 12, wifi_info, SYS_WIFI_OK_FG,
+                                        THEME_BG, 1);
+                        snprintf(wifi_info, sizeof(wifi_info), "%s", ip);
+                        gui_draw_string(10, sy + 24, wifi_info, SYS_VALUE_FG,
+                                        THEME_BG, 1);
+                        sy += 42;
+                    } else {
+                        gui_draw_string(10, sy + 12, "Odpojene",
+                                        SYS_WIFI_ERR_FG, THEME_BG, 1);
+                        sy += 30;
+                    }
+
+                    gui_draw_string(10, sy, "LOKALITA (GPS):", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+                    char loc_info[64];
+                    char city[32];
+                    weather_get_city(city, sizeof(city));
+                    snprintf(loc_info, sizeof(loc_info), "%.4f, %.4f", cfg->lat,
+                             cfg->lon);
+                    gui_draw_string(10, sy + 12, loc_info, SYS_VALUE_FG,
+                                    THEME_BG, 1);
+                    if (strlen(city) > 0 && strcmp(city, "Nezname") != 0) {
+                        gui_draw_string(10, sy + 24, city, COLOR_LIGHT_GRAY,
+                                        THEME_BG, 1);
+                        sy += 42;
+                    } else {
+                        sy += 30;
+                    }
+
+                    gui_draw_string(10, sy, "KALIBRACIA:", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+                    char cal_info[64];
+                    snprintf(cal_info, sizeof(cal_info),
+                             "DHT: %+.1f | BMP: %+.1f", cfg->dht_temp_offset,
+                             cfg->bmp_temp_offset);
+                    gui_draw_string(10, sy + 12, cal_info, SYS_VALUE_FG,
+                                    THEME_BG, 1);
+                    sy += 30;
+
+                    // --- ULOZISKO (LittleFS) ---
+                    gui_draw_string(10, sy, "ULOZISKO:", SYS_LABEL_FG, THEME_BG,
+                                    1);
+
+                    size_t total = 0, used = 0;
+                    storage_get_fs_info(&total, &used);
+
+                    if (total > 0) {
+                        char fs_buf[32];
+                        float used_kb = used / 1024.0f;
+                        float total_kb = total / 1024.0f;
+                        snprintf(fs_buf, sizeof(fs_buf), "%.1f / %.1f KB",
+                                 used_kb, total_kb);
+                        gui_draw_string(10, sy + 12, fs_buf, SYS_VALUE_FG,
+                                        THEME_BG, 1);
+
+                        // Minimalistický Progress bar
+                        int bar_w = 150;
+                        int fill_w = (int)(((float)used / total) * bar_w);
+                        gui_draw_rect(10, sy + 24, bar_w, 8, STATUS_BORDER_FG);
+                        if (fill_w > 0)
+                            gui_draw_rect(10, sy + 24, fill_w, 8, PROGRESS_FG);
+                    } else {
+                        gui_draw_string(10, sy + 12, "FS Error",
+                                        SYS_WIFI_ERR_FG, THEME_BG, 1);
+                    }
+                }
+                // --- OBRAZOVKA 3: Graf teploty zo senzora (24h) ---
+                else if (current_screen == 2) {
+                    // Zanshin: Prekreslíme pri zmene obrazovky alebo
+                    // každých 30 sekúnd pre rotáciu grafu.
+                    bool time_to_flip = (now_ms - last_graph_redraw_time) >=
+                                        graph_flip_interval_ms;
+                    bool needs_graph_redraw = force_redraw || time_to_flip;
+
+                    if (needs_graph_redraw) {
+                        if (time_to_flip && !force_redraw) {
+                            graph_page =
+                                (graph_page + 1) % 2;  // Rotácia medzi IN a OUT
+                        }
+                        last_graph_redraw_time = now_ms;
+
+                        // Vymažeme oblasť grafu iba vtedy, ak sme
+                        // obrazovku práve neprepli (vtedy ju celú
+                        // zmazal display_clear)
+                        if (!force_redraw) {
+                            gui_draw_rect(0, 25, LCD_H_RES, LCD_V_RES - 25,
+                                          THEME_BG);
+                        }
+
+                        // Decentná sub-hlavička s identifikátorom (IN /
+                        // OUT)
+                        if (graph_page == 0) {
+                            gui_draw_rect(10, 30, 8, 8, GRAPH_POINT_FG);
+                            char g_title[16];
+                            snprintf(g_title, sizeof(g_title), "IN (%dH)",
+                                     graph_range_days * 24);
+                            gui_draw_string(22, 30, g_title, GRAPH_POINT_FG,
+                                            THEME_BG, 1);
+                        } else {
+                            gui_draw_rect(10, 30, 8, 8, GRAPH_POINT_OWM_FG);
+                            char g_title[16];
+                            snprintf(g_title, sizeof(g_title), "OUT (%dH)",
+                                     graph_range_days * 24);
+                            gui_draw_string(22, 30, g_title, GRAPH_POINT_OWM_FG,
+                                            THEME_BG, 1);
+                        }
+
+                        time_t now_ts;
+                        time(&now_ts);
+                        uint32_t since_ts =
+                            now_ts - (graph_range_days * 24 * 3600);
+
+                        // Zanshin: Bezpečná dynamická alokácia, aby nám
+                        // 7-dňové grafy neodstrelili Heap/Stack
+                        int max_points = (graph_page == 0)
+                                             ? (144 * graph_range_days)
+                                             : (48 * graph_range_days);
+                        if (max_points > 1500) max_points = 1500;
+
+                        float* temps =
+                            (float*)malloc(max_points * sizeof(float));
+                        if (temps) {
+                            int count = 0;
+                            uint16_t line_color, point_color;
+
+                            if (graph_page == 0) {
+                                count = storage_get_temperature_history(
+                                    since_ts, temps, max_points);
+                                line_color = GRAPH_LINE_FG;
+                                point_color = GRAPH_POINT_FG;
+                            } else {
+                                count = storage_get_weather_history(
+                                    since_ts, temps, max_points);
+                                line_color = GRAPH_LINE_OWM_FG;
+                                point_color = GRAPH_POINT_OWM_FG;
+                            }
+
+                            if (count > 0) {
+                                float t_min = temps[0], t_max = temps[0];
+                                for (int i = 1; i < count; i++) {
+                                    if (temps[i] < t_min) t_min = temps[i];
+                                    if (temps[i] > t_max) t_max = temps[i];
+                                }
+
+                                // Bezpečnostná rezerva na okrajoch, aby
+                                // sa linka nerezala
+                                if (t_max - t_min < 2.0f) {
+                                    t_max += 1.0f;
+                                    t_min -= 1.0f;
+                                }
+
+                                int g_x = 42;  // Posunuté doprava pre hodnoty
+                                               // osi (max 5 znakov = 40px)
+                                int g_y = 65;
+                                int g_w = 268;  // Zmenšené, aby sme
+                                                // nepretiekli pravý
+                                                // okraj obrazovky
+                                int g_h = 100;
+
+                                // Kreslenie X a Y osí (sivá farba)
+                                gui_draw_rect(g_x, g_y, 2, g_h, GRAPH_AXIS_FG);
+                                gui_draw_rect(g_x, g_y + g_h, g_w, 2,
+                                              GRAPH_AXIS_FG);
+
+                                char buf[16];
+                                snprintf(buf, sizeof(buf), "%.1f", t_max);
+                                gui_draw_string(2, g_y, buf,
+                                                GRAPH_AXIS_VALUE_FG, THEME_BG,
+                                                1);
+                                snprintf(buf, sizeof(buf), "%.1f", t_min);
+                                gui_draw_string(2, g_y + g_h - 10, buf,
+                                                GRAPH_AXIS_VALUE_FG, THEME_BG,
+                                                1);
+
+                                float x_step = (float)(g_w - 5) /
+                                               (count > 1 ? count - 1 : 1);
+
+                                uint16_t fill_color =
+                                    blend_color(line_color, THEME_BG, 0.30f);
+                                int axis_bottom_y = g_y + g_h - 1;
+
+                                // Krok 1: Vykreslenie výplne (plochy
+                                // pod grafom)
+                                if (count > 1) {
+                                    int px_prev = g_x + 2;
+                                    int py_prev = g_y + g_h - 2 -
+                                                  (int)(((temps[0] - t_min) /
+                                                         (t_max - t_min)) *
+                                                        (g_h - 4));
+                                    for (int i = 1; i < count; i++) {
+                                        int px = g_x + 2 + (int)(i * x_step);
+                                        int py = g_y + g_h - 2 -
+                                                 (int)(((temps[i] - t_min) /
+                                                        (t_max - t_min)) *
+                                                       (g_h - 4));
+
+                                        for (int x = px_prev; x < px; x++) {
+                                            if (x >= g_x + g_w) break;
+                                            float t = (float)(x - px_prev) /
+                                                      (px - px_prev);
+                                            int y = py_prev +
+                                                    (int)(t * (py - py_prev));
+                                            int rect_h = axis_bottom_y - y;
+                                            if (rect_h > 0) {
+                                                gui_draw_vline_fast(x, y + 1,
+                                                                    rect_h,
+                                                                    fill_color);
+                                            }
+                                        }
+                                        px_prev = px;
+                                        py_prev = py;
                                     }
 
-                                    // Zanshin: Vymazanie priestoru pre AQI text
-                                    gui_draw_rect(bx_t + 15, box_y + 105, 125,
-                                                  24, THEME_BG);
-
-                                    gui_draw_string(bx_t + 15, box_y + 105,
-                                                    aqi_str, aqi_color,
-                                                    THEME_BG, 1);
-                                    char pm_buf[32];
-                                    snprintf(pm_buf, sizeof(pm_buf),
-                                             "- PM2.5: %.1f ug", pm25);
-                                    gui_draw_string(bx_t + 15, box_y + 117,
-                                                    pm_buf, COLOR_LIGHT_GRAY,
-                                                    THEME_BG, 1);
-                                }
-
-                                // --- RÁMČEK 2: Vlhkosť a Tlak ---
-                                int bx_h = 165;
-                                gui_draw_round_rect_empty(bx_h, box_y, box_w,
-                                                          box_h, 4,
-                                                          WEATHER_HUM_FG);
-                                gui_draw_string(bx_h + 15, box_y + 15,
-                                                "VLHKOST", WEATHER_HUM_FG,
-                                                THEME_BG, 1);
-                                gui_draw_icon_16x16(
-                                    bx_h + box_w - 25, box_y + 10, i_drop,
-                                    WEATHER_HUM_FG, THEME_BG, 1);
-                                if (force_redraw || wh != cache_wh ||
-                                    wp != cache_wp) {
-                                    snprintf(i_buf, sizeof(i_buf), "%d", wh);
-                                    int len_h = strlen(i_buf);
-                                    int px_h = bx_h + 15;
-
-                                    // Vlhkosť z API (bez desatín)
-                                    snprintf(i_buf, sizeof(i_buf), "%d", wh);
-                                    int len_h = strlen(i_buf);
-                                    int px_h = bx_h + 15;
-                                    gui_draw_rect(bx_h + 15, box_y + 65, 125,
-                                                  32, THEME_BG);
-                                    if (len_h == 1) px_h += 10;
-
-                                    gui_draw_string(px_h, box_y + 65, i_buf,
-                                                    WEATHER_TEMP_FG, THEME_BG,
-                                                    4);
-                                    int dx_h = px_h + (len_h * 32);
-                                    gui_draw_string(dx_h + 4, box_y + 81, "%",
-                                                    WEATHER_HUM_FG, THEME_BG,
-                                                    2);
-
-                                    // Zanshin: Vymazanie priestoru pred
-                                    // vykreslením
-                                    gui_draw_rect(bx_h + 15, box_y + 65, 125,
-                                                  32, THEME_BG);
-                                    gui_draw_rect(bx_h + 15, box_y + 105, 125,
-                                                  16, THEME_BG);
-                                    char p_buf[16];
-                                    snprintf(p_buf, sizeof(p_buf),
-                                             "TLAK: %d hPa", wp);
-                                    gui_draw_string(bx_h + 15, box_y + 105,
-                                                    p_buf, COLOR_LIGHT_GRAY,
-                                                    THEME_BG, 1);
-
-                                    cache_wh = wh;
-                                    cache_wp = wp;
-                                }
-
-                                if (len_h == 1) px_h += 10;
-
-                                // Prísne dodržaná baseline (Y = box_y + 65)
-                                gui_draw_string(px_h, box_y + 65, i_buf,
-                                                WEATHER_TEMP_FG, THEME_BG, 4);
-                                int dx_h = px_h + (len_h * 32);
-                                gui_draw_string(dx_h + 4, box_y + 81, "%",
-                                                WEATHER_HUM_FG, THEME_BG, 2);
-
-                                // Menší doplnkový text pre tlak
-                                char p_buf[16];
-                                snprintf(p_buf, sizeof(p_buf), "TLAK: %d hPa",
-                                         wp);
-                                gui_draw_string(bx_h + 15, box_y + 105, p_buf,
-                                                COLOR_LIGHT_GRAY, THEME_BG, 1);
-
-                            } else {
-                                gui_draw_string(10, 30, "API ERROR / WAITING:",
-                                                WEATHER_TITLE_FG, THEME_BG, 2);
-                                gui_draw_string(10, 60, "Cakaj na sync...",
-                                                WEATHER_TEMP_FG, THEME_BG, 2);
-                                if (force_redraw) {
-                                    gui_draw_string(
-                                        10, 30, "API ERROR / WAITING:",
-                                        WEATHER_TITLE_FG, THEME_BG, 2);
-                                    gui_draw_string(10, 60, "Cakaj na sync...",
-                                                    WEATHER_TEMP_FG, THEME_BG,
-                                                    2);
-                                }
-                            }
-                        }
-                        // --- OBRAZOVKA 2: Systém a Nastavenia ---
-                        else if (current_screen == 3) {
-                            app_config_t* cfg = app_config_get();
-                            int sy = 30;
-
-                            gui_draw_string(10, sy, "ZARIADENIE:", SYS_LABEL_FG,
-                                            THEME_BG, 1);
-                            gui_draw_string(10, sy + 12, cfg->alias,
-                                            SYS_VALUE_FG, THEME_BG, 1);
-                            sy += 30;
-
-                            gui_draw_string(10, sy,
-                                            "WIFI STATUS:", SYS_LABEL_WIFI_FG,
-                                            THEME_BG, 1);
-                            if (wifi_scanner_is_connected()) {
-                                char ssid[33];
-                                char ip[16];
-                                wifi_scanner_get_ssid(ssid, sizeof(ssid));
-                                wifi_scanner_get_ip(ip, sizeof(ip));
-                                char wifi_info[64];
-                                snprintf(wifi_info, sizeof(wifi_info), "%s",
-                                         ssid);
-                                gui_draw_string(10, sy + 12, wifi_info,
-                                                SYS_WIFI_OK_FG, THEME_BG, 1);
-                                snprintf(wifi_info, sizeof(wifi_info), "%s",
-                                         ip);
-                                gui_draw_string(10, sy + 24, wifi_info,
-                                                SYS_VALUE_FG, THEME_BG, 1);
-                                sy += 42;
-                            } else {
-                                gui_draw_string(10, sy + 12, "Odpojene",
-                                                SYS_WIFI_ERR_FG, THEME_BG, 1);
-                                sy += 30;
-                            }
-
-                            gui_draw_string(10, sy,
-                                            "LOKALITA (GPS):", SYS_LABEL_FG,
-                                            THEME_BG, 1);
-                            char loc_info[64];
-                            char city[32];
-                            weather_get_city(city, sizeof(city));
-                            snprintf(loc_info, sizeof(loc_info), "%.4f, %.4f",
-                                     cfg->lat, cfg->lon);
-                            gui_draw_string(10, sy + 12, loc_info, SYS_VALUE_FG,
-                                            THEME_BG, 1);
-                            if (strlen(city) > 0 &&
-                                strcmp(city, "Nezname") != 0) {
-                                gui_draw_string(10, sy + 24, city,
-                                                COLOR_LIGHT_GRAY, THEME_BG, 1);
-                                sy += 42;
-                            } else {
-                                sy += 30;
-                            }
-
-                            gui_draw_string(10, sy, "KALIBRACIA:", SYS_LABEL_FG,
-                                            THEME_BG, 1);
-                            char cal_info[64];
-                            snprintf(cal_info, sizeof(cal_info),
-                                     "DHT: %+.1f | BMP: %+.1f",
-                                     cfg->dht_temp_offset,
-                                     cfg->bmp_temp_offset);
-                            gui_draw_string(10, sy + 12, cal_info, SYS_VALUE_FG,
-                                            THEME_BG, 1);
-                            sy += 30;
-
-                            // --- ULOZISKO (LittleFS) ---
-                            gui_draw_string(10, sy, "ULOZISKO:", SYS_LABEL_FG,
-                                            THEME_BG, 1);
-
-                            size_t total = 0, used = 0;
-                            storage_get_fs_info(&total, &used);
-
-                            if (total > 0) {
-                                char fs_buf[32];
-                                float used_kb = used / 1024.0f;
-                                float total_kb = total / 1024.0f;
-                                snprintf(fs_buf, sizeof(fs_buf),
-                                         "%.1f / %.1f KB", used_kb, total_kb);
-                                gui_draw_string(10, sy + 12, fs_buf,
-                                                SYS_VALUE_FG, THEME_BG, 1);
-
-                                // Minimalistický Progress bar
-                                int bar_w = 150;
-                                int fill_w =
-                                    (int)(((float)used / total) * bar_w);
-                                gui_draw_rect(10, sy + 24, bar_w, 8,
-                                              STATUS_BORDER_FG);
-                                if (fill_w > 0)
-                                    gui_draw_rect(10, sy + 24, fill_w, 8,
-                                                  PROGRESS_FG);
-                            } else {
-                                gui_draw_string(10, sy + 12, "FS Error",
-                                                SYS_WIFI_ERR_FG, THEME_BG, 1);
-                            }
-                        }
-                        // --- OBRAZOVKA 3: Graf teploty zo senzora (24h) ---
-                        else if (current_screen == 2) {
-                            // Zanshin: Prekreslíme pri zmene obrazovky alebo
-                            // každých 30 sekúnd pre rotáciu grafu.
-                            bool time_to_flip =
-                                (now_ms - last_graph_redraw_time) >=
-                                graph_flip_interval_ms;
-                            bool needs_graph_redraw =
-                                force_redraw || time_to_flip;
-
-                            if (needs_graph_redraw) {
-                                if (time_to_flip && !force_redraw) {
-                                    graph_page = (graph_page + 1) %
-                                                 2;  // Rotácia medzi IN a OUT
-                                }
-                                last_graph_redraw_time = now_ms;
-
-                                // Vymažeme oblasť grafu iba vtedy, ak sme
-                                // obrazovku práve neprepli (vtedy ju celú
-                                // zmazal display_clear)
-                                if (!force_redraw) {
-                                    gui_draw_rect(0, 25, LCD_H_RES,
-                                                  LCD_V_RES - 25, THEME_BG);
-                                }
-
-                                // Decentná sub-hlavička s identifikátorom (IN /
-                                // OUT)
-                                if (graph_page == 0) {
-                                    gui_draw_rect(10, 30, 8, 8, GRAPH_POINT_FG);
-                                    char g_title[16];
-                                    snprintf(g_title, sizeof(g_title),
-                                             "IN (%dH)", graph_range_days * 24);
-                                    gui_draw_string(22, 30, g_title,
-                                                    GRAPH_POINT_FG, THEME_BG,
-                                                    1);
-                                } else {
-                                    gui_draw_rect(10, 30, 8, 8,
-                                                  GRAPH_POINT_OWM_FG);
-                                    char g_title[16];
-                                    snprintf(g_title, sizeof(g_title),
-                                             "OUT (%dH)",
-                                             graph_range_days * 24);
-                                    gui_draw_string(22, 30, g_title,
-                                                    GRAPH_POINT_OWM_FG,
-                                                    THEME_BG, 1);
-                                }
-
-                                time_t now_ts;
-                                time(&now_ts);
-                                uint32_t since_ts =
-                                    now_ts - (graph_range_days * 24 * 3600);
-
-                                // Zanshin: Bezpečná dynamická alokácia, aby nám
-                                // 7-dňové grafy neodstrelili Heap/Stack
-                                int max_points = (graph_page == 0)
-                                                     ? (144 * graph_range_days)
-                                                     : (48 * graph_range_days);
-                                if (max_points > 1500) max_points = 1500;
-
-                                float* temps =
-                                    (float*)malloc(max_points * sizeof(float));
-                                if (temps) {
-                                    int count = 0;
-                                    uint16_t line_color, point_color;
-
-                                    if (graph_page == 0) {
-                                        count = storage_get_temperature_history(
-                                            since_ts, temps, max_points);
-                                        line_color = GRAPH_LINE_FG;
-                                        point_color = GRAPH_POINT_FG;
-                                    } else {
-                                        count = storage_get_weather_history(
-                                            since_ts, temps, max_points);
-                                        line_color = GRAPH_LINE_OWM_FG;
-                                        point_color = GRAPH_POINT_OWM_FG;
-                                    }
-
-                                    if (count > 0) {
-                                        float t_min = temps[0],
-                                              t_max = temps[0];
-                                        for (int i = 1; i < count; i++) {
-                                            if (temps[i] < t_min)
-                                                t_min = temps[i];
-                                            if (temps[i] > t_max)
-                                                t_max = temps[i];
-                                        }
-
-                                        // Bezpečnostná rezerva na okrajoch, aby
-                                        // sa linka nerezala
-                                        if (t_max - t_min < 2.0f) {
-                                            t_max += 1.0f;
-                                            t_min -= 1.0f;
-                                        }
-
-                                        int g_x =
-                                            42;  // Posunuté doprava pre hodnoty
-                                                 // osi (max 5 znakov = 40px)
-                                        int g_y = 65;
-                                        int g_w = 268;  // Zmenšené, aby sme
-                                                        // nepretiekli pravý
-                                                        // okraj obrazovky
-                                        int g_h = 100;
-
-                                        // Kreslenie X a Y osí (sivá farba)
-                                        gui_draw_rect(g_x, g_y, 2, g_h,
-                                                      GRAPH_AXIS_FG);
-                                        gui_draw_rect(g_x, g_y + g_h, g_w, 2,
-                                                      GRAPH_AXIS_FG);
-
-                                        char buf[16];
-                                        snprintf(buf, sizeof(buf), "%.1f",
-                                                 t_max);
-                                        gui_draw_string(2, g_y, buf,
-                                                        GRAPH_AXIS_VALUE_FG,
-                                                        THEME_BG, 1);
-                                        snprintf(buf, sizeof(buf), "%.1f",
-                                                 t_min);
-                                        gui_draw_string(2, g_y + g_h - 10, buf,
-                                                        GRAPH_AXIS_VALUE_FG,
-                                                        THEME_BG, 1);
-
-                                        float x_step =
-                                            (float)(g_w - 5) /
-                                            (count > 1 ? count - 1 : 1);
-
-                                        uint16_t fill_color = blend_color(
-                                            line_color, THEME_BG, 0.30f);
-                                        int axis_bottom_y = g_y + g_h - 1;
-
-                                        // Krok 1: Vykreslenie výplne (plochy
-                                        // pod grafom)
-                                        if (count > 1) {
-                                            int px_prev = g_x + 2;
-                                            int py_prev =
-                                                g_y + g_h - 2 -
-                                                (int)(((temps[0] - t_min) /
-                                                       (t_max - t_min)) *
-                                                      (g_h - 4));
-                                            for (int i = 1; i < count; i++) {
-                                                int px =
-                                                    g_x + 2 + (int)(i * x_step);
-                                                int py =
-                                                    g_y + g_h - 2 -
-                                                    (int)(((temps[i] - t_min) /
-                                                           (t_max - t_min)) *
-                                                          (g_h - 4));
-
-                                                for (int x = px_prev; x < px;
-                                                     x++) {
-                                                    if (x >= g_x + g_w) break;
-                                                    float t =
-                                                        (float)(x - px_prev) /
-                                                        (px - px_prev);
-                                                    int y =
-                                                        py_prev +
-                                                        (int)(t *
-                                                              (py - py_prev));
-                                                    int rect_h =
-                                                        axis_bottom_y - y;
-                                                    if (rect_h > 0) {
-                                                        gui_draw_vline_fast(
-                                                            x, y + 1, rect_h,
+                                    // Vykreslenie úplne posledného
+                                    // stĺpca
+                                    int rect_h = axis_bottom_y - py_prev;
+                                    if (rect_h > 0 && px_prev < g_x + g_w) {
+                                        gui_draw_vline_fast(px_prev,
+                                                            py_prev + 1, rect_h,
                                                             fill_color);
-                                                    }
-                                                }
-                                                px_prev = px;
-                                                py_prev = py;
-                                            }
-
-                                            // Vykreslenie úplne posledného
-                                            // stĺpca
-                                            int rect_h =
-                                                axis_bottom_y - py_prev;
-                                            if (rect_h > 0 &&
-                                                px_prev < g_x + g_w) {
-                                                gui_draw_vline_fast(
-                                                    px_prev, py_prev + 1,
-                                                    rect_h, fill_color);
-                                            }
-                                        }
-
-                                        // Krok 1.5: Vykreslenie mriežky
-                                        // (Polnočné čiary prelomov dátumu)
-                                        struct tm timeinfo;
-                                        time_t since_ts_t = (time_t)since_ts;
-                                        localtime_r(&since_ts_t, &timeinfo);
-                                        timeinfo.tm_hour = 0;
-                                        timeinfo.tm_min = 0;
-                                        timeinfo.tm_sec = 0;
-                                        time_t midnight = mktime(&timeinfo);
-                                        if (midnight < since_ts_t) {
-                                            midnight +=
-                                                86400;  // Posun na prvú polnoc
-                                                        // v rámci grafu
-                                        }
-
-                                        while (midnight < now_ts) {
-                                            int mx =
-                                                g_x + 2 +
-                                                (int)(((float)(midnight -
-                                                               since_ts) /
-                                                       (now_ts - since_ts)) *
-                                                      (g_w - 5));
-                                            if (mx > g_x && mx < g_x + g_w) {
-                                                // 1px vertikálna čiara zhora
-                                                // nadol (neprekrýva
-                                                // horizontálnu os)
-                                                gui_draw_vline_fast(
-                                                    mx, g_y, g_h,
-                                                    GRAPH_GRID_FG);
-                                            }
-                                            midnight +=
-                                                86400;  // Skok na ďalší deň
-                                        }
-
-                                        // Krok 2: Vykreslenie čiar
-                                        if (count > 1) {
-                                            int px_prev = g_x + 2;
-                                            int py_prev =
-                                                g_y + g_h - 2 -
-                                                (int)(((temps[0] - t_min) /
-                                                       (t_max - t_min)) *
-                                                      (g_h - 4));
-                                            for (int i = 1; i < count; i++) {
-                                                int px =
-                                                    g_x + 2 + (int)(i * x_step);
-                                                int py =
-                                                    g_y + g_h - 2 -
-                                                    (int)(((temps[i] - t_min) /
-                                                           (t_max - t_min)) *
-                                                          (g_h - 4));
-                                                gui_draw_line(px_prev, py_prev,
-                                                              px, py,
-                                                              line_color);
-                                                px_prev = px;
-                                                py_prev = py;
-                                            }
-                                        }
-
-                                        // Vykreslenie bodov
-                                        int last_px = -1, last_py = -1;
-                                        int anim_delay =
-                                            2500 /
-                                            count;  // Konštantný čas animácie
-                                                    // ~2.5s pre plný graf
-                                        if (anim_delay < 2)
-                                            anim_delay = 2;  // Bezpečný čas pre
-                                                             // DMA radič
-                                        if (anim_delay > 20)
-                                            anim_delay =
-                                                20;  // Zamedzenie zamrznutia
-                                                     // pre málo hodnôt
-
-                                        for (int i = 0; i < count; i++) {
-                                            int px =
-                                                g_x + 2 + (int)(i * x_step);
-                                            int py = g_y + g_h - 2 -
-                                                     (int)(((temps[i] - t_min) /
-                                                            (t_max - t_min)) *
-                                                           (g_h - 4));
-
-                                            // Optimalizácia: Nekreslíme
-                                            // viackrát na ten istý fyzický
-                                            // pixel obrazovky
-                                            if (px == last_px && py == last_py)
-                                                continue;
-
-                                            gui_draw_point_fast(px - 1, py - 1,
-                                                                point_color);
-                                            last_px = px;
-                                            last_py = py;
-
-                                            vTaskDelay(
-                                                pdMS_TO_TICKS(anim_delay));
-
-                                            // Responzivita: Ak používateľ
-                                            // stlačí tlačidlo, okamžite
-                                            // prerušíme kreslenie grafu
-                                            if (gpio_get_level(
-                                                    (gpio_num_t)
-                                                        BOOT_BUTTON_PIN) == 0) {
-                                                break;
-                                            }
-                                        }
-
-                                    } else {
-                                        gui_draw_string(
-                                            10, 80, "Zatial malo dat...",
-                                            GRAPH_MUTED_FG, THEME_BG, 2);
                                     }
-                                    free(temps);
                                 }
+
+                                // Krok 1.5: Vykreslenie mriežky
+                                // (Polnočné čiary prelomov dátumu)
+                                struct tm timeinfo;
+                                time_t since_ts_t = (time_t)since_ts;
+                                localtime_r(&since_ts_t, &timeinfo);
+                                timeinfo.tm_hour = 0;
+                                timeinfo.tm_min = 0;
+                                timeinfo.tm_sec = 0;
+                                time_t midnight = mktime(&timeinfo);
+                                if (midnight < since_ts_t) {
+                                    midnight += 86400;  // Posun na prvú polnoc
+                                                        // v rámci grafu
+                                }
+
+                                while (midnight < now_ts) {
+                                    int mx =
+                                        g_x + 2 +
+                                        (int)(((float)(midnight - since_ts) /
+                                               (now_ts - since_ts)) *
+                                              (g_w - 5));
+                                    if (mx > g_x && mx < g_x + g_w) {
+                                        // 1px vertikálna čiara zhora
+                                        // nadol (neprekrýva
+                                        // horizontálnu os)
+                                        gui_draw_vline_fast(mx, g_y, g_h,
+                                                            GRAPH_GRID_FG);
+                                    }
+                                    midnight += 86400;  // Skok na ďalší deň
+                                }
+
+                                // Krok 2: Vykreslenie čiar
+                                if (count > 1) {
+                                    int px_prev = g_x + 2;
+                                    int py_prev = g_y + g_h - 2 -
+                                                  (int)(((temps[0] - t_min) /
+                                                         (t_max - t_min)) *
+                                                        (g_h - 4));
+                                    for (int i = 1; i < count; i++) {
+                                        int px = g_x + 2 + (int)(i * x_step);
+                                        int py = g_y + g_h - 2 -
+                                                 (int)(((temps[i] - t_min) /
+                                                        (t_max - t_min)) *
+                                                       (g_h - 4));
+                                        gui_draw_line(px_prev, py_prev, px, py,
+                                                      line_color);
+                                        px_prev = px;
+                                        py_prev = py;
+                                    }
+                                }
+
+                                // Vykreslenie bodov
+                                int last_px = -1, last_py = -1;
+                                int anim_delay =
+                                    2500 / count;  // Konštantný čas animácie
+                                                   // ~2.5s pre plný graf
+                                if (anim_delay < 2)
+                                    anim_delay = 2;  // Bezpečný čas pre
+                                                     // DMA radič
+                                if (anim_delay > 20)
+                                    anim_delay = 20;  // Zamedzenie zamrznutia
+                                                      // pre málo hodnôt
+
+                                for (int i = 0; i < count; i++) {
+                                    int px = g_x + 2 + (int)(i * x_step);
+                                    int py = g_y + g_h - 2 -
+                                             (int)(((temps[i] - t_min) /
+                                                    (t_max - t_min)) *
+                                                   (g_h - 4));
+
+                                    // Optimalizácia: Nekreslíme
+                                    // viackrát na ten istý fyzický
+                                    // pixel obrazovky
+                                    if (px == last_px && py == last_py)
+                                        continue;
+
+                                    gui_draw_point_fast(px - 1, py - 1,
+                                                        point_color);
+                                    last_px = px;
+                                    last_py = py;
+
+                                    vTaskDelay(pdMS_TO_TICKS(anim_delay));
+
+                                    // Responzivita: Ak používateľ
+                                    // stlačí tlačidlo, okamžite
+                                    // prerušíme kreslenie grafu
+                                    if (gpio_get_level(
+                                            (gpio_num_t)BOOT_BUTTON_PIN) == 0) {
+                                        break;
+                                    }
+                                }
+
+                            } else {
+                                gui_draw_string(10, 80, "Zatial malo dat...",
+                                                GRAPH_MUTED_FG, THEME_BG, 2);
                             }
+                            free(temps);
                         }
                     }
-
-                    // Vykreslíme tenkú sémantickú oddeľovaciu čiaru (len pri
-                    // celkovom pre-kreslení obrazovky)
-                    gui_draw_rect(0, 24, LCD_H_RES, 1, STATUS_BORDER_FG);
-
-                    force_redraw = false;
-                    last_draw_time = now_ms;
                 }
-
-                // --- ANIMÁCIA STATUS BARU & PROGRESS INDICATOR (Beží nezávisle
-                // na 50ms) --- Znovu naštítame presný čas pre plynulosť po
-                // dlhom renderovaní obsahu
-                now_ms = esp_timer_get_time() / 1000;
-
-                // Ak sme na obrazovke s grafom (a nie v options), vykreslíme
-                // bežiaci bod zľava doprava iba raz za sekundu (odstránenie
-                // blikania)
-                if (current_screen == 2 && !is_in_options) {
-                    uint32_t elapsed = now_ms - last_graph_redraw_time;
-                    uint32_t elapsed_sec = elapsed / 1000;
-
-                    if (elapsed_sec != last_anim_sec) {
-                        last_anim_sec = elapsed_sec;
-
-                        uint32_t flip_sec = graph_flip_interval_ms / 1000;
-                        if (elapsed_sec > flip_sec) elapsed_sec = flip_sec;
-                        float progress = (float)elapsed_sec / (float)flip_sec;
-
-                        int dot_x = (int)(progress *
-                                          (LCD_H_RES - 10));  // Zľava doprava
-                        if (dot_x < 0) dot_x = 0;
-                        if (dot_x > LCD_H_RES - 10) dot_x = LCD_H_RES - 10;
-
-                        // Zanshin optimalizácia: Prekreslíme len ak sa bod
-                        // reálne posunul
-                        if (dot_x != last_dot_x) {
-                            if (last_dot_x >= 0) {
-                                // Zmažeme starý bod a obnovíme pod ním
-                                // oddeľovaciu čiaru
-                                gui_draw_rect(last_dot_x, 23, 10, 3, THEME_BG);
-                                gui_draw_rect(last_dot_x, 24, 10, 1,
-                                              STATUS_BORDER_FG);
-                            }
-                            // Vykreslíme nový bod
-                            gui_draw_rect(dot_x, 23, 10, 3, PROGRESS_FG);
-                            last_dot_x = dot_x;
-                        }
-                    }
-                } else {
-                    last_dot_x = -1;  // Reset stavu, ak nie sme na grafe (aby
-                                      // sa neskôr vykreslil správne)
-                    last_anim_sec = 999;
-                }
-
-                // Krátka pauza (50ms) = blesková reakcia na tlačidlo +
-                // neblokujeme FreeRTOS
-                vTaskDelay(pdMS_TO_TICKS(50));
             }
+
+            // Vykreslíme tenkú sémantickú oddeľovaciu čiaru (len pri
+            // celkovom pre-kreslení obrazovky)
+            gui_draw_rect(0, 24, LCD_H_RES, 1, STATUS_BORDER_FG);
+
+            force_redraw = false;
+            last_draw_time = now_ms;
         }
+
+        // --- ANIMÁCIA STATUS BARU & PROGRESS INDICATOR (Beží nezávisle
+        // na 50ms) --- Znovu naštítame presný čas pre plynulosť po
+        // dlhom renderovaní obsahu
+        now_ms = esp_timer_get_time() / 1000;
+
+        // Ak sme na obrazovke s grafom (a nie v options), vykreslíme
+        // bežiaci bod zľava doprava iba raz za sekundu (odstránenie
+        // blikania)
+        if (current_screen == 2 && !is_in_options) {
+            uint32_t elapsed = now_ms - last_graph_redraw_time;
+            uint32_t elapsed_sec = elapsed / 1000;
+
+            if (elapsed_sec != last_anim_sec) {
+                last_anim_sec = elapsed_sec;
+
+                uint32_t flip_sec = graph_flip_interval_ms / 1000;
+                if (elapsed_sec > flip_sec) elapsed_sec = flip_sec;
+                float progress = (float)elapsed_sec / (float)flip_sec;
+
+                int dot_x =
+                    (int)(progress * (LCD_H_RES - 10));  // Zľava doprava
+                if (dot_x < 0) dot_x = 0;
+                if (dot_x > LCD_H_RES - 10) dot_x = LCD_H_RES - 10;
+
+                // Zanshin optimalizácia: Prekreslíme len ak sa bod
+                // reálne posunul
+                if (dot_x != last_dot_x) {
+                    if (last_dot_x >= 0) {
+                        // Zmažeme starý bod a obnovíme pod ním
+                        // oddeľovaciu čiaru
+                        gui_draw_rect(last_dot_x, 23, 10, 3, THEME_BG);
+                        gui_draw_rect(last_dot_x, 24, 10, 1, STATUS_BORDER_FG);
+                    }
+                    // Vykreslíme nový bod
+                    gui_draw_rect(dot_x, 23, 10, 3, PROGRESS_FG);
+                    last_dot_x = dot_x;
+                }
+            }
+        } else {
+            last_dot_x = -1;  // Reset stavu, ak nie sme na grafe (aby
+                              // sa neskôr vykreslil správne)
+            last_anim_sec = 999;
+        }
+
+        // Krátka pauza (50ms) = blesková reakcia na tlačidlo +
+        // neblokujeme FreeRTOS
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
