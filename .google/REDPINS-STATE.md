@@ -23,15 +23,16 @@
 - **HMI & UX Vylepšenia:** Systémová obrazovka presunutá na koniec rotácie (index 3). Vykresľuje detailné dáta menším fontom (IP, GPS, Kalibrácia, Úložisko). Počasie sťahuje a zobrazuje názov mesta z OWM (vrátane bez-alokačného `in-place` filtra diakritiky).
 
 ## AKTUALIZÁCIA STAVU (Handoff)
-**Dátum:** Aktuálny (Autonómia uzla a GUI)
-**Fáza:** Príprava pre Android Integráciu a Bezpečnosť Dát
-**Status:** 🟢 STABILIZOVANÉ (Plne konfigurovateľný C6 uzol)
+**Dátum:** Koniec session (Pokročilé HMI a Fail-Safe Storage)
+**Fáza:** Finalizácia C++ kódu, Príprava na Android Core
+**Status:** 🟢 STABILIZOVANÉ (Bez-blikania, Atomic úložisko)
 
 **Čo sa implementovalo v poslednej session:**
-- Centrálny manažment nastavení (cJSON) pre komplexné dáta.
-- Záchrana diakritiky z OWM (odfiltrovanie 2-bajtových UTF-8 znakov na ASCII).
-- Reorganizácia a zahustenie Systémovej obrazovky pre lepšie UX.
+- **Fail-Safe Úložisko:** 4-kroková atomic rotácia logov v `storage.cpp` chráni pred korupciou CSV pri výpadku prúdu.
+- **State Caching (HMI):** Odstránené preblikávanie GUI pri aktualizácii hodnôt. Obrazovka reaguje stabilne a šetrí SPI zbernicu.
+- **Prémiové UX funkcie:** Zavedený 3-stĺpcový dizajn pre "H2O Asistenta vetrania" a "Kvalitu ovzdušia (AQI/PM2.5)". Všetko beží s `O(1)` RAM komplexitou.
+- **Oprava ovládania:** Odstránená pasca "mŕtveho" kontextového menu na obrazovkách bez nastavení.
 
 **Kroky pre ďalšiu session (Otvorené úlohy):**
-1. **Bezpečnosť logov (Storage):** Implementovať 4-krokovú "atomic" rotáciu v `storage.cpp` (zápis do `.tmp`, premenovanie starého na `.old`, premenovanie tmp na filename, zmazanie `.old`) pre ochranu pred stratou dát pri výpadku prúdu.
-2. **Android Core (Bluetooth):** Implementácia `DataStreamHandler` v Androide pre zber `0xFD` (JSON) a `0xFE` (CSV) chunkov z charakteristiky A104.
+1. **ESP32 HMI - Barometrický trend:** Doplniť na obrazovku počasia predikciu (šípky) podľa offline histórie tlaku z LittleFS.
+2. **Android Core (Bluetooth):** Implementácia prúdového parsera `DataStreamHandler` v Androide pre bezpečné spájanie `0xFD` (JSON) a `0xFE` (CSV) chunkov z charakteristiky A104 a ich import do Room databázy.
