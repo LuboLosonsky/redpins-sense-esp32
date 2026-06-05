@@ -138,8 +138,8 @@ esp_err_t display_hal_init(void) {
     ledc_channel.timer_sel = LEDC_TIMER_0;
     ledc_channel.intr_type = LEDC_INTR_DISABLE;
     ledc_channel.gpio_num = WS_BCKL;
-    ledc_channel.duty =
-        30;  // Hodnota 30 z 255 (cca 12 % jasu). Zabráni "vytekaniu" svetla.
+    ledc_channel.duty = 80;  // Hodnota 80 z 255 (cca 31 % jasu). Dobrý
+                             // kompromis medzi jasom a presvitaním.
     ledc_channel.hpoint = 0;
     ledc_channel_config(&ledc_channel);
 

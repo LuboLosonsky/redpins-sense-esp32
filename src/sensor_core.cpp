@@ -98,7 +98,8 @@ bool sensor_core_read_dht11(float* temperature, float* humidity) {
 
 static void sensor_task(void* arg) {
     ESP_LOGI(TAG, "Sensor Task spustený (Živé meranie: 5s, Logovanie: 10m)");
-    int log_counter = 0;
+    int last_log_min = -1;
+    bool sync_warned = false;
 
     while (1) {
         float t = 0, h = 0;
@@ -107,26 +108,28 @@ static void sensor_task(void* arg) {
             s_last_h = h;
         }
 
-        // Každých 10 minút (120 x 5 sekúnd) zapíšeme do LittleFS
-        log_counter++;
-        if (log_counter >= 120) {
-            time_t now;
-            time(&now);
+        time_t now;
+        time(&now);
 
-            // UNIX Timestamp > 1600000000 znamená, že SNTP je už
-            // zosynchronizované (po roku 2020)
-            if (now > 1600000000) {
+        // SNTP synchronizácia hotová (> 2020)
+        if (now > 1600000000) {
+            struct tm timeinfo;
+            localtime_r(&now, &timeinfo);
+
+            // Logovanie presne v 00, 10, 20, 30, 40, 50 minúte
+            if (timeinfo.tm_min % 10 == 0 && timeinfo.tm_min != last_log_min) {
+                last_log_min = timeinfo.tm_min;
                 storage_log_sensor_data((uint32_t)now, s_last_t, s_last_h,
                                         1013.0);
-                ESP_LOGI(TAG, "Dáta uložené do internej pamäte. Timestamp: %lu",
-                         (unsigned long)now);
-            } else {
-                ESP_LOGW(TAG,
-                         "Čas ešte nie je synchronizovaný, preskakujem zápis "
-                         "do logu (prevencia poškodenia Delta Sync).");
+                ESP_LOGI(TAG,
+                         "Dáta uložené. Plánovač: %02d:%02d, Timestamp: %lu",
+                         timeinfo.tm_hour, timeinfo.tm_min, (unsigned long)now);
             }
-
-            log_counter = 0;
+        } else if (!sync_warned) {
+            ESP_LOGW(TAG,
+                     "Čas ešte nie je synchronizovaný, čakám na NTP pre "
+                     "plánovač...");
+            sync_warned = true;
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));

@@ -4,14 +4,21 @@
 
 #include "ble_server.h"
 
+#include <stdio.h>
+
+#include "app_config.h"
 #include "esp_bt.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include "host/ble_hs.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "sensor_core.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
@@ -96,11 +103,15 @@ static int ble_svc_devinfo_access(uint16_t conn_handle, uint16_t attr_handle,
         wifi_scanner_get_ip(ip, sizeof(ip));
     }
 
-    char dev_info_json[128];
+    app_config_t* cfg = app_config_get();
+
+    char dev_info_json[256];
     snprintf(dev_info_json, sizeof(dev_info_json),
              "{\"hw\":\"C6-V1\",\"bat\":100,\"free_heap\":%lu,\"uptime_s\":%lu,"
-             "\"wifi_connected\":%s,\"ip\":\"%s\"}",
-             free_heap, uptime_s, wifi_connected ? "true" : "false", ip);
+             "\"wifi_connected\":%s,\"ip\":\"%s\",\"alias\":\"%s\",\"lat\":%."
+             "6f,\"lon\":%.6f}",
+             free_heap, uptime_s, wifi_connected ? "true" : "false", ip,
+             cfg->alias, cfg->lat, cfg->lon);
 
     int rc = os_mbuf_append(ctxt->om, dev_info_json, strlen(dev_info_json));
 
@@ -120,6 +131,89 @@ static void sync_task(void* param) {
     uint32_t since_ts = *(uint32_t*)param;
     free(param);  // Uvoľníme parameter
     storage_sync_sensors(since_ts);
+    vTaskDelete(NULL);
+}
+
+// Wrapper pre asynchrónne čítanie počasia z LittleFS
+static void sync_weather_task(void* param) {
+    uint32_t since_ts = *(uint32_t*)param;
+    free(param);  // Uvoľníme parameter
+    storage_sync_weather(since_ts);
+    vTaskDelete(NULL);
+}
+
+// Asynchrónne generovanie a streamovanie SYS_INFO (0x04) po 20-bajtových
+// chunkoch
+static void sys_info_task(void* param) {
+    uint32_t free_heap = esp_get_free_heap_size();
+    uint32_t uptime_s = esp_timer_get_time() / 1000000ULL;
+    bool wifi_connected = wifi_scanner_is_connected();
+
+    char ip[16] = "";
+    if (wifi_connected) {
+        wifi_scanner_get_ip(ip, sizeof(ip));
+    }
+
+    app_config_t* cfg = app_config_get();
+
+    char json[256];
+    int json_len = snprintf(
+        json, sizeof(json),
+        "{\"hw\":\"C6-V1\",\"bat\":100,\"free_heap\":%lu,\"uptime_s\":%lu,"
+        "\"wifi_connected\":%s,\"ip\":\"%s\",\"alias\":\"%s\",\"lat\":%.6f,"
+        "\"lon\":%.6f}",
+        free_heap, uptime_s, wifi_connected ? "true" : "false", ip, cfg->alias,
+        cfg->lat, cfg->lon);
+
+    size_t offset = 0;
+    while (offset < json_len) {
+        size_t copy_size = (json_len - offset > 19) ? 19 : (json_len - offset);
+        uint8_t buffer[20];
+        buffer[0] = 0xFD;  // Hlavička JSON streamu pre Android
+        memcpy(&buffer[1], json + offset, copy_size);
+        ble_notify_datastream(buffer, copy_size + 1);
+        offset += copy_size;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    uint8_t eot[2] = {0xFD, '\0'};
+    ble_notify_datastream(eot, 2);
+
+    vTaskDelete(NULL);
+}
+
+// Streamovanie uložených sietí (A104) pre Android UI
+static void wifi_list_saved_task(void* param) {
+    char ssid[33] = {0};
+    nvs_handle_t nvs_handle;
+    if (nvs_open("wifi_cfg", NVS_READONLY, &nvs_handle) == ESP_OK) {
+        size_t ssid_len = sizeof(ssid);
+        nvs_get_str(nvs_handle, "ssid", ssid, &ssid_len);
+        nvs_close(nvs_handle);
+    }
+
+    char json[128];
+    if (strlen(ssid) > 0) {
+        snprintf(json, sizeof(json), "[{\"ssid\":\"%s\"}]", ssid);
+    } else {
+        snprintf(json, sizeof(json), "[]");
+    }
+
+    int json_len = strlen(json);
+    size_t offset = 0;
+    while (offset < json_len) {
+        size_t copy_size = (json_len - offset > 19) ? 19 : (json_len - offset);
+        uint8_t buffer[20];
+        buffer[0] = 0xFD;
+        memcpy(&buffer[1], json + offset, copy_size);
+        ble_notify_datastream(buffer, copy_size + 1);
+        offset += copy_size;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    uint8_t eot[2] = {0xFD, '\0'};
+    ble_notify_datastream(eot, 2);
+
     vTaskDelete(NULL);
 }
 
@@ -153,10 +247,27 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
                 ble_notify_telemetry(t, h, p);
                 break;
             }
+            case 0x01:  // REBOOT
+                ESP_LOGI(TAG, "Príkaz: REBOOT (0x01). Reštartujem systém.");
+                esp_restart();
+                break;
+            case 0x02:  // FACTORY_RESET
+                ESP_LOGI(TAG, "Príkaz: FACTORY_RESET (0x02). Vymazávam údaje.");
+                nvs_flash_erase();
+                remove("/data/config.json");
+                remove("/data/sensor.csv");
+                remove("/data/weather.csv");
+                esp_restart();
+                break;
+            case 0x03:  // DEEP_SLEEP
+                ESP_LOGI(TAG, "Príkaz: DEEP_SLEEP (0x03).");
+                esp_deep_sleep_start();
+                break;
             case 0x04:  // SYS_INFO
-                ESP_LOGI(TAG,
-                         "Príkaz: SYS_INFO (0x04). Core žiada metadáta, "
-                         "prečíta si A102.");
+                ESP_LOGI(
+                    TAG,
+                    "Príkaz: SYS_INFO (0x04). Streamujem metadáta na A104.");
+                xTaskCreate(sys_info_task, "sys_info", 4096, NULL, 2, NULL);
                 break;
             case 0x11:  // WIFI_SCAN
                 ESP_LOGI(TAG,
@@ -217,6 +328,16 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
                 }
                 break;
             }
+            case 0x13:  // WIFI_DISCONNECT
+                ESP_LOGI(TAG, "Príkaz: WIFI_DISCONNECT (0x13)");
+                esp_wifi_disconnect();
+                xTaskCreate(sys_info_task, "sys_info", 4096, NULL, 2, NULL);
+                break;
+            case 0x14:  // WIFI_LIST_SAVED
+                ESP_LOGI(TAG, "Príkaz: WIFI_LIST_SAVED (0x14)");
+                xTaskCreate(wifi_list_saved_task, "wifi_saved", 4096, NULL, 2,
+                            NULL);
+                break;
             case 0x23: {  // SENSOR_SYNC (Delta Sync)
                 uint32_t since_ts = 0;
                 if (len >= 5) {
@@ -230,6 +351,101 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
                 uint32_t* ts_param = (uint32_t*)malloc(sizeof(uint32_t));
                 *ts_param = since_ts;
                 xTaskCreate(sync_task, "sync_task", 4096, ts_param, 2, NULL);
+                break;
+            }
+            case 0x24: {  // WEATHER_SYNC (Delta Sync)
+                uint32_t since_ts = 0;
+                if (len >= 5) {
+                    // Little Endian konverzia nezávislá na architektúre
+                    since_ts = buf[1] | (buf[2] << 8) | (buf[3] << 16) |
+                               (buf[4] << 24);
+                }
+                ESP_LOGI(TAG, "Príkaz: WEATHER_SYNC (0x24). Timestamp: %lu",
+                         since_ts);
+
+                uint32_t* ts_param = (uint32_t*)malloc(sizeof(uint32_t));
+                *ts_param = since_ts;
+                xTaskCreate(sync_weather_task, "sync_w_task", 4096, ts_param, 2,
+                            NULL);
+                break;
+            }
+            case 0x25:  // LOG_CLEAR
+                ESP_LOGI(TAG, "Príkaz: LOG_CLEAR (0x25)");
+                remove("/data/sensor.csv");
+                remove("/data/weather.csv");
+                break;
+            case 0x26: {  // SET_CALIBRATION
+                ESP_LOGI(TAG, "Príkaz: SET_CALIBRATION (0x26).");
+                if (len >= 9) {
+                    float dht_off, bmp_off;
+                    memcpy(&dht_off, &buf[1], 4);
+                    memcpy(&bmp_off, &buf[5], 4);
+                    ESP_LOGI(TAG, "Nové offsety: DHT=%.2f, BMP=%.2f", dht_off,
+                             bmp_off);
+
+                    app_config_t* cfg = app_config_get();
+                    cfg->dht_temp_offset = dht_off;
+                    cfg->bmp_temp_offset = bmp_off;
+                    app_config_save();
+                } else {
+                    ESP_LOGW(TAG,
+                             "SET_CALIBRATION -> Odmietnuté: Neúplný payload "
+                             "(očakávané 9, prijaté %d)",
+                             len);
+                }
+                break;
+            }
+            case 0x31: {  // SET_COORDS
+                ESP_LOGI(TAG, "Príkaz: SET_COORDS (0x31).");
+                if (len >= 9) {
+                    float lat, lon;
+                    memcpy(&lat, &buf[1], 4);
+                    memcpy(&lon, &buf[5], 4);
+                    ESP_LOGI(TAG, "Nové GPS: Lat=%.6f, Lon=%.6f", lat, lon);
+
+                    app_config_t* cfg = app_config_get();
+                    cfg->lat = lat;
+                    cfg->lon = lon;
+                    app_config_save();
+                    xTaskCreate(sys_info_task, "sys_info", 4096, NULL, 2, NULL);
+                } else {
+                    ESP_LOGW(TAG,
+                             "SET_COORDS -> Odmietnuté: Neúplný payload "
+                             "(očakávané 9, prijaté %d)",
+                             len);
+                }
+                break;
+            }
+            case 0x32: {  // SET_ALIAS
+                ESP_LOGI(
+                    TAG,
+                    "Príkaz: SET_ALIAS (0x32). Parsujem string z payloadu.");
+                if (len >= 2) {
+                    uint8_t alias_len = buf[1];
+                    if (2 + alias_len <= len) {
+                        app_config_t* cfg = app_config_get();
+                        size_t max_len = sizeof(cfg->alias) - 1;
+                        size_t copy_len =
+                            alias_len < max_len ? alias_len : max_len;
+
+                        memcpy(cfg->alias, &buf[2], copy_len);
+                        cfg->alias[copy_len] = '\0';
+
+                        ESP_LOGI(TAG, "Nový Alias nastavený na: '%s'",
+                                 cfg->alias);
+                        app_config_save();  // Uloží zmenu na disk (LittleFS)
+                        xTaskCreate(sys_info_task, "sys_info", 4096, NULL, 2,
+                                    NULL);
+                    } else {
+                        ESP_LOGW(TAG,
+                                 "SET_ALIAS -> Odmietnuté: Neúplný payload "
+                                 "(očakávané >= %d, prijaté %d)",
+                                 2 + alias_len, len);
+                    }
+                } else {
+                    ESP_LOGW(TAG,
+                             "SET_ALIAS -> Odmietnuté: Chýba dĺžka aliasu");
+                }
                 break;
             }
             default:
@@ -375,6 +591,9 @@ void ble_notify_telemetry(float t, float h, uint16_t p) {
     if (conn_handle == BLE_HS_CONN_HANDLE_NONE || telemetry_handle == 0)
         return;  // Nikto nepočúva
 
+    ESP_LOGI(TAG, "📤 BLE TX (A101) -> Telemetria: %.1f°C, %.1f%%, %dhPa", t, h,
+             p);
+
     // RCP v2.1: Binárny payload pre A101 (Little Endian: 4B Temp, 4B Hum, 2B
     // Pres)
     uint8_t payload[10];
@@ -400,6 +619,21 @@ void ble_notify_datastream(const uint8_t* data, size_t length) {
         return;
     }
 
+    if (data[0] == 0xFD) {
+        char tmp[24] = {0};
+        size_t text_len = (length - 1 < 23) ? (length - 1) : 23;
+        memcpy(tmp, &data[1], text_len);
+        ESP_LOGI(TAG, "📤 BLE TX (A104) JSON Stream: %s", tmp);
+    } else if (data[0] == 0xFE) {
+        char tmp[24] = {0};
+        size_t text_len = (length - 1 < 23) ? (length - 1) : 23;
+        memcpy(tmp, &data[1], text_len);
+        ESP_LOGI(TAG, "📤 BLE TX (A104) CSV Stream: %s", tmp);
+    } else {
+        ESP_LOGI(TAG, "📤 BLE TX (A104) Binárny/EOT paket, dĺžka: %d", length);
+        ESP_LOG_BUFFER_HEX("BLE_TX_HEX", data, length);
+    }
+
     struct os_mbuf* om = ble_hs_mbuf_from_flat(data, length);
     if (om) {
         int rc = ble_gatts_notify_custom(conn_handle, datastream_handle, om);
@@ -422,6 +656,10 @@ void ble_server_init() {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_BT);
     snprintf(device_name, sizeof(device_name), "RP-S-%02X%02X", mac[4], mac[5]);
+
+    // Zanshin: Skrytie otravného spamu z NimBLE jadra, naše logy zostanú
+    // zachované
+    esp_log_level_set("NimBLE", ESP_LOG_WARN);
 
     // 1. Inicializácia portu NimBLE stacku MUSÍ byť úplne prvá
     nimble_port_init();
@@ -446,4 +684,8 @@ void ble_server_init() {
 
     ble_hs_cfg.sync_cb = ble_app_on_sync;
     nimble_port_freertos_init(ble_host_task);
+}
+
+bool ble_server_is_connected() {
+    return conn_handle != BLE_HS_CONN_HANDLE_NONE;
 }

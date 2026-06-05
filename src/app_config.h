@@ -10,9 +10,10 @@
     "http://api.openweathermap.org/data/2.5/" \
     "weather?id=3056508&appid=bf45f6a7032650a46b26e01d879cb436&units=metric"
 
-#define SENSOR_READ_INTERVAL_MS (5 * 1000)          // 5 sekúnd pre HMI
-#define SENSOR_LOG_INTERVAL_MS (10 * 60 * 1000)     // 10 minút do CSV
-#define WEATHER_FETCH_INTERVAL_MS (30 * 60 * 1000)  // 30 minút
+#define SENSOR_READ_INTERVAL_MS (5 * 1000)       // 5 sekúnd pre HMI
+#define SENSOR_LOG_INTERVAL_MS (10 * 60 * 1000)  // 10 minút do CSV
+#define WEATHER_FETCH_INTERVAL_MS \
+    (20 * 60 * 1000)  // 20 minút (Max 3x za hodinu)
 
 // Cesty k súborom na LittleFS
 #define FILE_SENSOR_CSV "/data/sensor.csv"

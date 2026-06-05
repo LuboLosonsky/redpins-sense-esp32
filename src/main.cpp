@@ -58,7 +58,8 @@ extern "C" void app_main(void) {
         // Zámerne nezastavujeme beh, BLE stack sa musí spustiť pre diagnostiku
     }
 
-    // Načítanie aplikačnej konfigurácie a kalibračných dát z LittleFS
+    // Načítanie aplikačnej konfigurácie (alias, GPS, kalibrácia, UI) z
+    // config.json
     app_config_init();
 
     // 3. Inicializácia senzorov (DHT11)
@@ -80,8 +81,11 @@ extern "C" void app_main(void) {
 
     xTaskCreate(gui_task, "gui_task", 4096, NULL, 2, NULL);
 
-    // 6. Pokus o automatické pripojenie na známu Wi-Fi sieť z NVS
-    wifi_scanner_auto_connect();
+    // 6. Pokus o automatické pripojenie na známu Wi-Fi sieť z config.json
+    // Poznámka: Pôvodné volanie wifi_scanner_auto_connect() by malo byť
+    // nahradené logikou, ktorá číta g_app_config.wifi_ssid a
+    // g_app_config.wifi_password.
+    wifi_scanner_auto_connect();  // <- Refaktorovať na použitie app_config
 
     // 7. Hlavná slučka (Wu Wei - žiadna práca navyše, uvoľnenie prostriedkov)
     while (true) {

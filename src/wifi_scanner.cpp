@@ -256,6 +256,26 @@ void wifi_scanner_scan_and_stream() {
 
 bool wifi_scanner_is_connected() { return s_is_connected; }
 
+int wifi_scanner_get_rssi() {
+    if (!s_is_connected) return -100;
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+        return ap.rssi;
+    }
+    return -100;
+}
+
+void wifi_scanner_get_ssid(char* outBuffer, size_t maxLength) {
+    if (s_is_connected) {
+        wifi_ap_record_t ap;
+        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            snprintf(outBuffer, maxLength, "%s", ap.ssid);
+            return;
+        }
+    }
+    outBuffer[0] = '\0';
+}
+
 void wifi_scanner_get_ip(char* outBuffer, size_t maxLength) {
     if (s_is_connected) {
         snprintf(outBuffer, maxLength, "%s", s_ip_address);
