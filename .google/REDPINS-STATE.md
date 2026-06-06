@@ -36,3 +36,21 @@
 **Kroky pre ďalšiu session (Otvorené úlohy):**
 1. **ESP32 HMI - Barometrický trend:** Doplniť na obrazovku počasia predikciu (šípky) podľa offline histórie tlaku z LittleFS.
 2. **Android Core (Bluetooth):** Implementácia prúdového parsera `DataStreamHandler` v Androide pre bezpečné spájanie `0xFD` (JSON) a `0xFE` (CSV) chunkov z charakteristiky A104 a ich import do Room databázy.
+
+[UPDATE-REDPINS-STATE]
+Dátum: [Dnešný dátum]
+Fáza: Firmware C++ Stabilizovaný (RCP v2.1)
+
+1. HMI a Displej:
+- Rozšírené na 5 rotujúcich obrazoviek (Sensors, Weather, Atmosphere, Temperature, System).
+- Nová obrazovka "Atmosphere" obsahuje čistý a veľký layout pre kvalitu ovzdušia a barometrický tlak.
+- Opravené indexovanie menu a rotácie po partial-merge konflikte. Displej je plne responzívny (bez alokácie na Heape).
+
+2. Úložisko a Barometria (storage.cpp):
+- Implementovaný O(1) kruhový buffer (18 vzoriek / 72 bajtov v SRAM) pre 3-hodinový trend tlaku.
+- Buffer sa automaticky predvyplní pri štarte (rýchlym seekom v sensor.csv).
+- Trend sa zobrazuje v GUI ako textové znaky `^`, `v`, `-` bez bitmapovej fragmentácie pamäte.
+
+3. Architektúra a API (BLE):
+- Verzia protokolu (RCP v2.1) je implicitne rozpoznateľná pre Android cez JSON parameter `"hw":"C6-V1"`, ktorý sa odosiela v rámci SYS_INFO. Nevyžaduje dedikovanú charakteristiku.
+[/UPDATE-REDPINS-STATE]

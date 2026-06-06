@@ -28,3 +28,6 @@ int storage_get_weather_history(uint32_t since_timestamp, float* temp_array,
 
 // Vráti celkovú veľkosť a využité miesto na partícii LittleFS
 void storage_get_fs_info(size_t* total, size_t* used);
+
+// Vráti: 1 (Stúpa), -1 (Klesá), 0 (Stabilný), -2 (Málo dát pre výpočet)
+int storage_get_pressure_trend();

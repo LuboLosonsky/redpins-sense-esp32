@@ -12,6 +12,41 @@
 
 static const char* TAG = "STORAGE";
 
+// --- Zanshin: O(1) RAM cache pre barometrický trend ---
+#define TREND_MAX_SAMPLES 18  // 3 hodiny (pri 10-minútovom intervale)
+static int s_trend_buffer[TREND_MAX_SAMPLES];
+static int s_trend_idx = 0;
+static int s_trend_count = 0;
+
+static void prefill_trend_buffer() {
+    FILE* f = fopen("/data/sensor.csv", "r");
+    if (!f) return;
+
+    char line_buf[64];
+    while (fgets(line_buf, sizeof(line_buf), f)) {
+        uint32_t ts = strtoul(line_buf, NULL, 10);
+        if (ts == 0) continue;  // Preskoč hlavičku
+
+        // Rýchly posun v štruktúre: timestamp;temp;hum;press
+        char* p1 = strchr(line_buf, ';');
+        if (p1) {
+            char* p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char* p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    // Zápis do kruhového buffra
+                    s_trend_buffer[s_trend_idx] = atoi(p3 + 1);
+                    s_trend_idx = (s_trend_idx + 1) % TREND_MAX_SAMPLES;
+                    if (s_trend_count < TREND_MAX_SAMPLES) s_trend_count++;
+                }
+            }
+        }
+    }
+    fclose(f);
+    ESP_LOGI(TAG, "Trend buffer naplnený z histórie. Vzorky: %d",
+             s_trend_count);
+}
+
 esp_err_t storage_init() {
     ESP_LOGI(TAG, "Inicializujem LittleFS...");
 
@@ -77,6 +112,8 @@ esp_err_t storage_init() {
             fclose(fw);
         }
     }
+
+    prefill_trend_buffer();
 
     return ESP_OK;
 }
@@ -255,6 +292,11 @@ void storage_log_sensor_data(uint32_t timestamp, float t, float h, float p) {
         fprintf(f, "%lu;%.1f;%.1f;%d\n", timestamp, t, h, (int)p);
         fclose(f);
     }
+
+    // Aktualizácia trend buffra v RAM
+    s_trend_buffer[s_trend_idx] = (int)p;
+    s_trend_idx = (s_trend_idx + 1) % TREND_MAX_SAMPLES;
+    if (s_trend_count < TREND_MAX_SAMPLES) s_trend_count++;
 }
 
 void storage_log_weather_data(uint32_t timestamp, float t, int h, int p,
@@ -335,4 +377,19 @@ int storage_get_weather_history(uint32_t since_timestamp, float* temp_array,
 void storage_get_fs_info(size_t* total, size_t* used) {
     // Natívne ESP-IDF API vráti aktuálny stav partície "storage"
     esp_littlefs_info("storage", total, used);
+}
+
+int storage_get_pressure_trend() {
+    if (s_trend_count < TREND_MAX_SAMPLES) {
+        return -2;  // Nedostatok dát pre výpočet 3-hodinového trendu
+    }
+    // Najnovší záznam je na (idx - 1), najstarší na (idx) v plnom buffri
+    int current_p = s_trend_buffer[(s_trend_idx + TREND_MAX_SAMPLES - 1) %
+                                   TREND_MAX_SAMPLES];
+    int old_p = s_trend_buffer[s_trend_idx];
+
+    int diff = current_p - old_p;
+    if (diff >= 2) return 1;    // Stúpa
+    if (diff <= -2) return -1;  // Klesá
+    return 0;                   // Stabilný
 }

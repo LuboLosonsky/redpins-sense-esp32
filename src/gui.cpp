@@ -447,7 +447,7 @@ extern "C" void gui_task(void* arg) {
             btn_long_pressed = true;
             if (is_in_options) {
                 // Potvrdenie voľby
-                if (current_screen == 2) {
+                if (current_screen == 3) {
                     if (selected_option_idx == 0)
                         graph_range_days = 1;
                     else if (selected_option_idx == 1)
@@ -471,7 +471,7 @@ extern "C" void gui_task(void* arg) {
                 display_clear(THEME_BG);
                 // Zanshin: Zamedzenie uviaznutia. Menu otvoríme len tam, kde
                 // reálne sú nastavenia (Grafy)
-                if (current_screen == 2) {
+                if (current_screen == 3) {
                     is_in_options = true;
                     selected_option_idx = 0;
                     force_redraw = true;
@@ -486,12 +486,12 @@ extern "C" void gui_task(void* arg) {
                 (now_ms - btn_press_time > 50)) {  // 50ms debounce
                 if (is_in_options) {
                     // Cyklovanie možností v menu
-                    int opt_count = (current_screen == 2) ? 6 : 1;
+                    int opt_count = (current_screen == 3) ? 6 : 1;
                     selected_option_idx = (selected_option_idx + 1) % opt_count;
                     force_redraw = true;
                 } else {
                     current_screen =
-                        (current_screen + 1) % 4;  // Rotácia obrazoviek
+                        (current_screen + 1) % 5;  // Rotácia obrazoviek
                     force_redraw = true;
                     display_clear(THEME_BG);  // Vymazanie pri prepnutí
                 }
@@ -528,8 +528,8 @@ extern "C" void gui_task(void* arg) {
 
             // Názov aktuálnej obrazovky (Zarovnaný doľava s paddingom na 12
             // znakov pre automatické vymazanie)
-            const char* screen_titles[] = {"SENSORS", "WEATHER", "TEMPERATURE",
-                                           "SYSTEM"};
+            const char* screen_titles[] = {"SENSORS", "WEATHER", "ATMOSPHERE",
+                                           "TEMPERATURE", "SYSTEM"};
             char title_buf[16];
             if (is_in_options) {
                 snprintf(title_buf, sizeof(title_buf), "%-12s", "OPTIONS");
@@ -570,8 +570,8 @@ extern "C" void gui_task(void* arg) {
                                            "Rotacia 30s", "Back"};
                 const char* opt_default[] = {"Back"};
                 const char** options =
-                    (current_screen == 2) ? opt_graph : opt_default;
-                int count = (current_screen == 2) ? 6 : 1;
+                    (current_screen == 3) ? opt_graph : opt_default;
+                int count = (current_screen == 3) ? 6 : 1;
 
                 for (int i = 0; i < count; i++) {
                     uint16_t fg =
@@ -605,17 +605,17 @@ extern "C" void gui_task(void* arg) {
                     if (force_redraw) {
                         gui_draw_round_rect_empty(bx_t, box_y, box_w, box_h, 4,
                                                   DASH_TEMP_BORDER);
-                        gui_draw_string(bx_t + 15, box_y + 8, "TEPLOTA",
+                        gui_draw_string(bx_t + 10, box_y + 5, "TEPLOTA",
                                         DASH_TEMP_LBL, THEME_BG, 1);
-                        gui_draw_icon_16x16(bx_t + box_w - 25, box_y + 6,
+                        gui_draw_icon_16x16(bx_t + box_w - 25, box_y + 3,
                                             i_thermometer, DASH_TEMP_ICON,
                                             THEME_BG, 1);
 
                         gui_draw_round_rect_empty(bx_h, box_y, box_w, box_h, 4,
                                                   DASH_HUM_BORDER);
-                        gui_draw_string(bx_h + 15, box_y + 8, "VLHKOST",
+                        gui_draw_string(bx_h + 10, box_y + 5, "VLHKOST",
                                         DASH_HUM_LBL, THEME_BG, 1);
-                        gui_draw_icon_16x16(bx_h + box_w - 25, box_y + 6,
+                        gui_draw_icon_16x16(bx_h + box_w - 25, box_y + 3,
                                             i_drop, DASH_HUM_ICON, THEME_BG, 1);
 
                         gui_draw_round_rect_empty(bx2, box_y2, box_w2, box_h2,
@@ -668,7 +668,7 @@ extern "C" void gui_task(void* arg) {
                             float ah_in = get_absolute_humidity(t, h);
                             float ah_out = get_absolute_humidity(wt, (float)wh);
 
-                            const char* vent_text = "NEUTRAL";
+                            const char* vent_text = "---";
                             uint16_t vent_color = COLOR_LIGHT_GRAY;
 
                             if (ah_out < ah_in - 0.5f) {
@@ -679,7 +679,7 @@ extern "C" void gui_task(void* arg) {
                                 vent_color = SYS_WIFI_ERR_FG;
                             }
 
-                            gui_draw_string(160 - (13 * 8) / 2, box_y2 + 8,
+                            gui_draw_string(160 - (13 * 8) / 2, box_y2 + 5,
                                             "H2O VETRANIE:", COLOR_LIGHT_GRAY,
                                             THEME_BG, 1);
                             gui_draw_rect(15, box_y2 + 25, 270, 16, THEME_BG);
@@ -688,28 +688,28 @@ extern "C" void gui_task(void* arg) {
                                             box_y2 + 25, vent_text, vent_color,
                                             THEME_BG, 2);
 
-                            int left_center = 75;
+                            int left_center = 55;
                             char out_val[8];
                             snprintf(out_val, sizeof(out_val), "%.1f", ah_out);
                             int out_w = strlen(out_val) * 16;
                             int out_tot_w = out_w + 4 + 8;
                             int out_x = left_center - (out_tot_w / 2);
                             gui_draw_string(left_center - (5 * 8) / 2,
-                                            box_y2 + 8, "VONKU",
+                                            box_y2 + 5, "VONKU",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
                             gui_draw_string(out_x, box_y2 + 25, out_val,
                                             COLOR_LIGHT_GRAY, THEME_BG, 2);
                             gui_draw_string(out_x + out_w + 4, box_y2 + 33, "g",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
 
-                            int right_center = 245;
+                            int right_center = 265;
                             char in_val[8];
                             snprintf(in_val, sizeof(in_val), "%.1f", ah_in);
                             int in_w = strlen(in_val) * 16;
                             int in_tot_w = in_w + 4 + 8;
                             int in_x = right_center - (in_tot_w / 2);
                             gui_draw_string(right_center - (6 * 8) / 2,
-                                            box_y2 + 8, "VNUTRI",
+                                            box_y2 + 5, "VNUTRI",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
                             gui_draw_string(in_x, box_y2 + 25, in_val,
                                             COLOR_LIGHT_GRAY, THEME_BG, 2);
@@ -733,7 +733,7 @@ extern "C" void gui_task(void* arg) {
                     int wh = 0, wp = 0, wid = 0;
                     if (weather_get_latest(&wt, &wh, &wp, &wid)) {
                         char i_buf[8] = {0}, d_buf[8] = {0};
-                        int box_y = 30, box_w = 145, box_h = 130;
+                        int box_y = 30, box_w = 145, box_h = 105;
 
                         // --- RÁMČEK 1: Počasie a Teplota ---
                         int bx_t = 10;
@@ -744,18 +744,18 @@ extern "C" void gui_task(void* arg) {
                                                       4, WEATHER_DESC_FG);
                             gui_draw_round_rect_empty(bx_h, box_y, box_w, box_h,
                                                       4, WEATHER_HUM_FG);
-                            gui_draw_string(bx_h + 15, box_y + 15, "VLHKOST",
+                            gui_draw_string(bx_h + 10, box_y + 5, "VLHKOST",
                                             WEATHER_HUM_FG, THEME_BG, 1);
-                            gui_draw_icon_16x16(bx_h + box_w - 25, box_y + 10,
+                            gui_draw_icon_16x16(bx_h + box_w - 25, box_y + 3,
                                                 i_drop, WEATHER_HUM_FG,
                                                 THEME_BG, 1);
                         }
 
                         if (force_redraw || wt != cache_wt ||
                             wid != cache_wid) {
-                            gui_draw_rect(bx_t + 15, box_y + 15, 80, 16,
+                            gui_draw_rect(bx_t + 10, box_y + 5, 80, 16,
                                           THEME_BG);
-                            gui_draw_string(bx_t + 15, box_y + 15,
+                            gui_draw_string(bx_t + 10, box_y + 5,
                                             get_weather_desc(wid),
                                             WEATHER_DESC_FG, THEME_BG, 1);
 
@@ -778,9 +778,9 @@ extern "C" void gui_task(void* arg) {
                                 i_color = ICON_CLOUD_FG;
                             }
 
-                            gui_draw_rect(bx_t + box_w - 40, box_y + 8, 32, 32,
+                            gui_draw_rect(bx_t + box_w - 40, box_y + 5, 32, 32,
                                           THEME_BG);
-                            gui_draw_icon_16x16(bx_t + box_w - 40, box_y + 8,
+                            gui_draw_icon_16x16(bx_t + box_w - 40, box_y + 5,
                                                 icon, i_color, THEME_BG, 2);
 
                             format_sensor_val(wt, i_buf, d_buf);
@@ -807,41 +807,7 @@ extern "C" void gui_task(void* arg) {
                             cache_wid = wid;
                         }
 
-                        int aqi = 0;
-                        float pm25 = 0;
-                        if (weather_get_aqi(&aqi, &pm25)) {
-                            if (force_redraw || aqi != cache_aqi ||
-                                pm25 != cache_pm25) {
-                                const char* aqi_str = "OVZDUSIE: NEZNAMO";
-                                uint16_t aqi_color = COLOR_LIGHT_GRAY;
-
-                                if (aqi <= 2) {
-                                    aqi_str = "OVZDUSIE: CISTE";
-                                    aqi_color = SYS_WIFI_OK_FG;
-                                } else if (aqi == 3) {
-                                    aqi_str = "OVZDUSIE: ZHORSE.";
-                                    aqi_color = COLOR_LIGHT_GRAY;
-                                } else {
-                                    aqi_str = "OVZDUSIE: SMOG";
-                                    aqi_color = SYS_WIFI_ERR_FG;
-                                }
-
-                                gui_draw_rect(bx_t + 15, box_y + 105, 125, 24,
-                                              THEME_BG);
-                                gui_draw_string(bx_t + 15, box_y + 105, aqi_str,
-                                                aqi_color, THEME_BG, 1);
-                                char pm_buf[32];
-                                snprintf(pm_buf, sizeof(pm_buf),
-                                         "- PM2.5: %.1f ug", pm25);
-                                gui_draw_string(bx_t + 15, box_y + 117, pm_buf,
-                                                COLOR_LIGHT_GRAY, THEME_BG, 1);
-
-                                cache_aqi = aqi;
-                                cache_pm25 = pm25;
-                            }
-                        }
-
-                        if (force_redraw || wh != cache_wh || wp != cache_wp) {
+                        if (force_redraw || wh != cache_wh) {
                             snprintf(i_buf, sizeof(i_buf), "%d", wh);
                             int len_h = strlen(i_buf);
                             int px_h = bx_h + 15;
@@ -856,15 +822,7 @@ extern "C" void gui_task(void* arg) {
                             gui_draw_string(dx_h + 4, box_y + 81, "%",
                                             WEATHER_HUM_FG, THEME_BG, 2);
 
-                            gui_draw_rect(bx_h + 15, box_y + 105, 125, 16,
-                                          THEME_BG);
-                            char p_buf[16];
-                            snprintf(p_buf, sizeof(p_buf), "TLAK: %d hPa", wp);
-                            gui_draw_string(bx_h + 15, box_y + 105, p_buf,
-                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
-
                             cache_wh = wh;
-                            cache_wp = wp;
                         }
                     } else {
                         if (force_redraw) {
@@ -875,8 +833,97 @@ extern "C" void gui_task(void* arg) {
                         }
                     }
                 }
-                // --- OBRAZOVKA 2: Systém a Nastavenia ---
-                else if (current_screen == 3) {
+                // --- OBRAZOVKA 2: Ovzdušie a Tlak (Nová ATMOSPHERE) ---
+                else if (current_screen == 2) {
+                    float wt = 0;
+                    int wh = 0, wp = 0, wid = 0;
+                    if (weather_get_latest(&wt, &wh, &wp, &wid)) {
+                        int aqi = 0;
+                        float pm25 = 0;
+                        weather_get_aqi(&aqi, &pm25);
+
+                        int box_w = 290, box_x = 10;
+
+                        if (force_redraw) {
+                            gui_draw_round_rect_empty(box_x, 30, box_w, 65, 4,
+                                                      COLOR_LIGHT_GRAY);
+                            gui_draw_string(box_x + 10, 35, "KVALITA OVZDUSIA",
+                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                            gui_draw_round_rect_empty(box_x, 100, box_w, 65, 4,
+                                                      COLOR_LIGHT_GRAY);
+                            gui_draw_string(box_x + 10, 105,
+                                            "BAROMETRICKY TLAK",
+                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
+                        }
+
+                        if (force_redraw || aqi != cache_aqi ||
+                            pm25 != cache_pm25) {
+                            gui_draw_rect(box_x + 10, 48, 270, 40, THEME_BG);
+
+                            const char* aqi_str = "NEZNAMO";
+                            uint16_t aqi_color = COLOR_LIGHT_GRAY;
+
+                            if (aqi > 0 && aqi <= 2) {
+                                aqi_str = "CISTE";
+                                aqi_color = SYS_WIFI_OK_FG;
+                            } else if (aqi == 3) {
+                                aqi_str = "ZHORSE.";
+                                aqi_color = COLOR_LIGHT_GRAY;
+                            } else if (aqi > 3) {
+                                aqi_str = "SMOG";
+                                aqi_color = SYS_WIFI_ERR_FG;
+                            }
+
+                            gui_draw_string(box_x + 10, 50, aqi_str, aqi_color,
+                                            THEME_BG, 3);
+
+                            char pm_buf[32];
+                            snprintf(pm_buf, sizeof(pm_buf),
+                                     "PM2.5: %.1f ug/m3", pm25);
+                            gui_draw_string(box_x + 150, 60, pm_buf,
+                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                            cache_aqi = aqi;
+                            cache_pm25 = pm25;
+                        }
+
+                        if (force_redraw || wp != cache_wp) {
+                            gui_draw_rect(box_x + 10, 120, 270, 40, THEME_BG);
+
+                            char p_buf[16];
+                            snprintf(p_buf, sizeof(p_buf), "%d", wp);
+                            gui_draw_string(box_x + 10, 122, p_buf,
+                                            WEATHER_TITLE_FG, THEME_BG, 4);
+
+                            int pw = strlen(p_buf) * 32;
+                            gui_draw_string(box_x + 10 + pw + 8, 138, "hPa",
+                                            COLOR_LIGHT_GRAY, THEME_BG, 2);
+
+                            int trend = storage_get_pressure_trend();
+                            const char* t_str = "-";
+                            uint16_t t_color = COLOR_LIGHT_GRAY;
+                            if (trend == 1) {
+                                t_str = "^";
+                                t_color = SYS_WIFI_OK_FG;
+                            } else if (trend == -1) {
+                                t_str = "v";
+                                t_color = SYS_WIFI_ERR_FG;
+                            }
+                            gui_draw_string(box_x + box_w - 45, 122, t_str,
+                                            t_color, THEME_BG, 4);
+
+                            cache_wp = wp;
+                        }
+                    } else {
+                        if (force_redraw) {
+                            gui_draw_string(10, 30, "API ERROR / WAITING:",
+                                            WEATHER_TITLE_FG, THEME_BG, 2);
+                        }
+                    }
+                }
+                // --- OBRAZOVKA 4: Systém a Nastavenia ---
+                else if (current_screen == 4) {
                     app_config_t* cfg = app_config_get();
                     int sy = 30;
 
@@ -962,7 +1009,7 @@ extern "C" void gui_task(void* arg) {
                     }
                 }
                 // --- OBRAZOVKA 3: Graf teploty zo senzora (24h) ---
-                else if (current_screen == 2) {
+                else if (current_screen == 3) {
                     // Zanshin: Prekreslíme pri zmene obrazovky alebo
                     // každých 30 sekúnd pre rotáciu grafu.
                     bool time_to_flip = (now_ms - last_graph_redraw_time) >=
@@ -1235,7 +1282,7 @@ extern "C" void gui_task(void* arg) {
         // Ak sme na obrazovke s grafom (a nie v options), vykreslíme
         // bežiaci bod zľava doprava iba raz za sekundu (odstránenie
         // blikania)
-        if (current_screen == 2 && !is_in_options) {
+        if (current_screen == 3 && !is_in_options) {
             uint32_t elapsed = now_ms - last_graph_redraw_time;
             uint32_t elapsed_sec = elapsed / 1000;
 
