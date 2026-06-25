@@ -10,12 +10,15 @@ void storage_sync_sensors(uint32_t since_timestamp);
 // Nájde offset podľa timestampu a odpošle surové CSV dáta o počasí cez BLE
 void storage_sync_weather(uint32_t since_timestamp);
 
+// Násilne preruší aktuálne prebiehajúci prenos dát (Stream Collision Guard)
+void storage_abort_stream();
+
 // Pripíše nový záznam na koniec histórie senzorov
 void storage_log_sensor_data(uint32_t timestamp, float t, float h, float p);
 
 // Pripíše nový záznam na koniec histórie počasia
-void storage_log_weather_data(uint32_t timestamp, float t, int h, int p,
-                              int id);
+void storage_log_weather_data(uint32_t timestamp, const char* city, float t,
+                              int h, int p);
 
 // Načíta históriu teplôt za zadaný časový úsek (max_count chráni RAM pred
 // pretečením)

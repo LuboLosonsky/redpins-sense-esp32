@@ -5,11 +5,6 @@
 
 // --- GLOBÁLNE KONŠTANTY ---
 
-// API a intervaly
-#define WEATHER_API_URL                       \
-    "http://api.openweathermap.org/data/2.5/" \
-    "weather?id=3056508&appid=bf45f6a7032650a46b26e01d879cb436&units=metric"
-
 #define SENSOR_READ_INTERVAL_MS (5 * 1000)       // 5 sekúnd pre HMI
 #define SENSOR_LOG_INTERVAL_MS (10 * 60 * 1000)  // 10 minút do CSV
 #define WEATHER_FETCH_INTERVAL_MS \
@@ -25,10 +20,13 @@ typedef struct {
     float lat;
     float lon;
     char alias[64];
+    char weather_api_key[40];
 
     // Kalibrácia
     float dht_temp_offset;
     float bmp_temp_offset;
+
+    bool display_rotated;  // Orientácia displeja (otočenie o 180°)
 } app_config_t;
 
 // Inicializácia a načítanie nastavení z LittleFS

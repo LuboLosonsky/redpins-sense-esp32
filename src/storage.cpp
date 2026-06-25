@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ble_server.h"
 #include "esp_littlefs.h"
@@ -11,6 +12,11 @@
 #include "freertos/task.h"
 
 static const char* TAG = "STORAGE";
+
+// --- Zanshin: Stream Collision Guard pre RCP V2.3 ---
+volatile bool g_storage_abort_stream = false;
+
+void storage_abort_stream() { g_storage_abort_stream = true; }
 
 // --- Zanshin: O(1) RAM cache pre barometrický trend ---
 #define TREND_MAX_SAMPLES 18  // 3 hodiny (pri 10-minútovom intervale)
@@ -96,20 +102,27 @@ esp_err_t storage_init() {
 
         // Zanshin: Ak neexistuje počasie, vygenerujeme dummy históriu pre
         // parser v Androide
+        // Auto-migrácia: Skontrolujeme hlavičku pre RCP v2.3
         FILE* fw = fopen("/data/weather.csv", "r");
-        if (!fw) {
+        bool recreate_weather = true;
+        if (fw) {
+            char header[64];
+            if (fgets(header, sizeof(header), fw)) {
+                if (strncmp(header, "timestamp;city", 14) == 0)
+                    recreate_weather = false;
+            }
+            fclose(fw);
+        }
+        if (recreate_weather) {
             ESP_LOGI(TAG,
-                     "Súbor neexistuje, generujem testovací weather.csv s "
-                     "hlavičkou...");
+                     "Reštrukturalizácia weather.csv (RCP V2.3) pre zladenie s "
+                     "Androidom...");
             fw = fopen("/data/weather.csv", "w");
             if (fw) {
-                fprintf(fw, "timestamp;temp;hum;press;id\n");
-                fprintf(fw, "1714500000;15.5;60;1013;800\n");
-                fprintf(fw, "1714503600;16.2;58;1012;801\n");
+                fprintf(fw, "timestamp;city;temp;hum;press\n");
+                fprintf(fw, "1714500000;Zilina;15.5;60;1013\n");
                 fclose(fw);
             }
-        } else {
-            fclose(fw);
         }
     }
 
@@ -120,93 +133,159 @@ esp_err_t storage_init() {
 
 void storage_sync_sensors(uint32_t since_timestamp) {
     ESP_LOGI(TAG, "Spúšťam Delta Sync od timestampu: %lu", since_timestamp);
+    g_storage_abort_stream = false;
+
+    // NTP Guard (Ak je epoch time menší ako september 2020)
+    time_t now_ts;
+    time(&now_ts);
+    if (now_ts < 1600000000) {
+        ESP_LOGW(TAG, "NTP nesynchronizované. Blokujem dump SENS (RCP v2.3).");
+        uint8_t env[5] = {0xA3, 0, 0, 0, 0};
+        ble_notify_datastream(env, 5);
+        return;
+    }
 
     FILE* f = fopen("/data/sensor.csv", "r");
     if (!f) {
         ESP_LOGE(TAG, "Súbor sensor.csv neexistuje!");
-        uint8_t eof = 0xFF;
-        ble_notify_datastream(&eof, 1);
+        uint8_t env[5] = {0xA3, 0, 0, 0, 0};
+        ble_notify_datastream(env, 5);
         return;
     }
 
     long target_offset = 0;
     char line_buf[64];
 
-    // Rýchly sekvenčný scan (O(n) na disku, O(1) v RAM)
-    while (fgets(line_buf, sizeof(line_buf), f)) {
-        uint32_t ts = strtoul(line_buf, NULL, 10);
-        if (ts == 0 && target_offset == 0)
-            continue;  // Zachová hlavičku pri prvej synchronizácii
-        if (ts > since_timestamp) break;  // Našli sme prvý novší záznam
-        target_offset = ftell(f);  // Inak si zapamätáme koniec tohto riadku
+    // 1. Preskočíme lokálnu hlavičku, aby sme mohli vložiť vlastnú (Dynamic
+    // Header)
+    if (fgets(line_buf, sizeof(line_buf), f)) {
+        target_offset = ftell(f);
+        // 2. Hľadáme prvý záznam novší ako since_timestamp
+        while (fgets(line_buf, sizeof(line_buf), f)) {
+            uint32_t ts = strtoul(line_buf, NULL, 10);
+            if (ts > since_timestamp) break;
+            target_offset = ftell(f);
+        }
     }
 
+    // Predvýpočet veľkosti pre obálku (Binary Framing)
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
     fseek(f, target_offset, SEEK_SET);
-    ESP_LOGI(TAG, "Našiel som offset %ld. Začínam zero-copy stream.",
-             target_offset);
 
+    const char* dyn_header = "timestamp;temp;hum;press\n";
+    uint32_t data_size =
+        (file_size > target_offset) ? (file_size - target_offset) : 0;
+    uint32_t payload_size = strlen(dyn_header) + data_size;
+
+    // Odoslanie RCP V2.3 Obálky
+    uint8_t env[5];
+    env[0] = 0xA3;  // Mode SENSORS
+    env[1] = (payload_size >> 0) & 0xFF;
+    env[2] = (payload_size >> 8) & 0xFF;
+    env[3] = (payload_size >> 16) & 0xFF;
+    env[4] = (payload_size >> 24) & 0xFF;
+    ble_notify_datastream(env, 5);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    // Odoslanie Dynamic Headeru
+    size_t h_len = strlen(dyn_header);
+    size_t h_sent = 0;
+    while (h_sent < h_len && !g_storage_abort_stream) {
+        size_t to_send = (h_len - h_sent > 20) ? 20 : (h_len - h_sent);
+        ble_notify_datastream((uint8_t*)dyn_header + h_sent, to_send);
+        h_sent += to_send;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    // Zero-Copy stream surových dát
     uint8_t chunk[20];
-    chunk[0] = 0xFE;  // Hlavička pre CSV stream (RCP v1.3/2.1)
-
-    while (true) {
-        size_t bytes_read = fread(&chunk[1], 1, 19, f);
+    while (!g_storage_abort_stream) {
+        size_t bytes_read = fread(chunk, 1, 20, f);
         if (bytes_read > 0) {
-            ble_notify_datastream(chunk, bytes_read + 1);
-            vTaskDelay(pdMS_TO_TICKS(20));  // Flow control okno
+            ble_notify_datastream(chunk, bytes_read);
+            vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (bytes_read < 19) break;  // End of File
+        if (bytes_read < 20) break;
     }
 
     fclose(f);
-
-    uint8_t eof = 0xFF;  // Koniec prenosu
-    ble_notify_datastream(&eof, 1);
     ESP_LOGI(TAG, "Delta Sync ukončený.");
 }
 
 void storage_sync_weather(uint32_t since_timestamp) {
     ESP_LOGI(TAG, "Spúšťam Delta Sync (Počasie) od timestampu: %lu",
              since_timestamp);
+    g_storage_abort_stream = false;
+
+    time_t now_ts;
+    time(&now_ts);
+    if (now_ts < 1600000000) {
+        ESP_LOGW(TAG,
+                 "NTP nesynchronizované. Blokujem dump WEATHER (RCP v2.3).");
+        uint8_t env[5] = {0xA4, 0, 0, 0, 0};
+        ble_notify_datastream(env, 5);
+        return;
+    }
 
     FILE* f = fopen("/data/weather.csv", "r");
     if (!f) {
         ESP_LOGE(TAG, "Súbor weather.csv neexistuje!");
-        uint8_t eof = 0xFF;
-        ble_notify_datastream(&eof, 1);
+        uint8_t env[5] = {0xA4, 0, 0, 0, 0};
+        ble_notify_datastream(env, 5);
         return;
     }
 
     long target_offset = 0;
     char line_buf[64];
 
-    while (fgets(line_buf, sizeof(line_buf), f)) {
-        uint32_t ts = strtoul(line_buf, NULL, 10);
-        if (ts == 0 && target_offset == 0)
-            continue;  // Zachová hlavičku pri prvej synchronizácii
-        if (ts > since_timestamp) break;
+    if (fgets(line_buf, sizeof(line_buf), f)) {
         target_offset = ftell(f);
+        while (fgets(line_buf, sizeof(line_buf), f)) {
+            uint32_t ts = strtoul(line_buf, NULL, 10);
+            if (ts > since_timestamp) break;
+            target_offset = ftell(f);
+        }
     }
 
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
     fseek(f, target_offset, SEEK_SET);
-    ESP_LOGI(TAG, "Našiel som offset %ld. Začínam zero-copy stream počasia.",
-             target_offset);
+
+    const char* dyn_header = "timestamp;city;temp;hum;press\n";
+    uint32_t data_size =
+        (file_size > target_offset) ? (file_size - target_offset) : 0;
+    uint32_t payload_size = strlen(dyn_header) + data_size;
+
+    uint8_t env[5];
+    env[0] = 0xA4;  // Mode WEATHER
+    env[1] = (payload_size >> 0) & 0xFF;
+    env[2] = (payload_size >> 8) & 0xFF;
+    env[3] = (payload_size >> 16) & 0xFF;
+    env[4] = (payload_size >> 24) & 0xFF;
+    ble_notify_datastream(env, 5);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    size_t h_len = strlen(dyn_header);
+    size_t h_sent = 0;
+    while (h_sent < h_len && !g_storage_abort_stream) {
+        size_t to_send = (h_len - h_sent > 20) ? 20 : (h_len - h_sent);
+        ble_notify_datastream((uint8_t*)dyn_header + h_sent, to_send);
+        h_sent += to_send;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
 
     uint8_t chunk[20];
-    chunk[0] = 0xFE;  // Hlavička pre CSV stream
-
-    while (true) {
-        size_t bytes_read = fread(&chunk[1], 1, 19, f);
+    while (!g_storage_abort_stream) {
+        size_t bytes_read = fread(chunk, 1, 20, f);
         if (bytes_read > 0) {
-            ble_notify_datastream(chunk, bytes_read + 1);
-            vTaskDelay(pdMS_TO_TICKS(20));  // Flow control okno
+            ble_notify_datastream(chunk, bytes_read);
+            vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (bytes_read < 19) break;  // End of File
+        if (bytes_read < 20) break;
     }
 
     fclose(f);
-
-    uint8_t eof = 0xFF;  // Koniec prenosu
-    ble_notify_datastream(&eof, 1);
     ESP_LOGI(TAG, "Delta Sync (Počasie) ukončený.");
 }
 
@@ -299,12 +378,12 @@ void storage_log_sensor_data(uint32_t timestamp, float t, float h, float p) {
     if (s_trend_count < TREND_MAX_SAMPLES) s_trend_count++;
 }
 
-void storage_log_weather_data(uint32_t timestamp, float t, int h, int p,
-                              int id) {
+void storage_log_weather_data(uint32_t timestamp, const char* city, float t,
+                              int h, int p) {
     storage_rotate_log_if_needed("/data/weather.csv");
     FILE* f = fopen("/data/weather.csv", "a");
     if (f) {
-        fprintf(f, "%lu;%.1f;%d;%d;%d\n", timestamp, t, h, p, id);
+        fprintf(f, "%lu;%s;%.1f;%d;%d\n", timestamp, city ? city : "", t, h, p);
         fclose(f);
     }
 }
@@ -360,13 +439,16 @@ int storage_get_weather_history(uint32_t since_timestamp, float* temp_array,
 
         char* p1 = strchr(line_buf, ';');
         if (p1) {
-            float temp = atof(p1 + 1);
-            if (count < max_count) {
-                temp_array[count++] = temp;
-            } else {
-                memmove(temp_array, temp_array + 1,
-                        (max_count - 1) * sizeof(float));
-                temp_array[max_count - 1] = temp;
+            char* p2 = strchr(p1 + 1, ';');  // Preskočíme mesto
+            if (p2) {
+                float temp = atof(p2 + 1);
+                if (count < max_count) {
+                    temp_array[count++] = temp;
+                } else {
+                    memmove(temp_array, temp_array + 1,
+                            (max_count - 1) * sizeof(float));
+                    temp_array[max_count - 1] = temp;
+                }
             }
         }
     }

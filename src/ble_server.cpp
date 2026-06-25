@@ -69,11 +69,11 @@ static int ble_svc_telemetry_access(uint16_t conn_handle, uint16_t attr_handle,
                                     void* arg) {
     ESP_LOGI(TAG,
              "BLE Request: Zariadenie vyžaduje čítanie Telemetrie (A101) - "
-             "Skúšam DHT11");
+             "lokálne senzory");
 
-    float t = 0.0, h = 0.0;
-    sensor_core_get_latest(&t, &h);
-    uint16_t p = (t != 0.0 || h != 0.0) ? 1013 : 0;
+    float t = 0.0f, h = 0.0f, p_hpa = 0.0f;
+    sensor_core_get_latest_full(&t, &h, &p_hpa, NULL);
+    uint16_t p = (p_hpa > 0.0f) ? (uint16_t)p_hpa : 0;
 
     // RCP v2.1: Binárny payload pre A101 (Little Endian: 4B Temp, 4B Hum, 2B
     // Pres)
@@ -224,6 +224,10 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
     ESP_LOGI(TAG, "BLE Command: Prijatý WRITE (A103), dĺžka: %d bajtov",
              total_len);
 
+    // Zanshin: Násilné prerušenie akéhokoľvek bežiaceho streamu (A104) pri
+    // novom príkaze
+    storage_abort_stream();
+
     // Profi debugging: Vypísanie prijatých dát v HEX formáte bez alokácie na
     // Heape
     uint8_t buf[128];  // Zväčšené pre WIFI_CONNECT (SSID 32B + PWD 64B)
@@ -240,9 +244,9 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
                          "Príkaz: SENSOR_FORCE (0x21). Odosielam telemetriu na "
                          "vyžiadanie.");
 
-                float t = 0.0, h = 0.0;
-                sensor_core_get_latest(&t, &h);
-                uint16_t p = (t != 0.0 || h != 0.0) ? 1013 : 0;
+                float t = 0.0f, h = 0.0f, p_hpa = 0.0f;
+                sensor_core_get_latest_full(&t, &h, &p_hpa, NULL);
+                uint16_t p = (p_hpa > 0.0f) ? (uint16_t)p_hpa : 0;
 
                 ble_notify_telemetry(t, h, p);
                 break;
@@ -530,6 +534,10 @@ static int ble_gap_event(struct ble_gap_event* event, void* arg) {
             ESP_LOGW(TAG, "BLE Disconnected! Conn Handle: %d, Dôvod: %d",
                      event->disconnect.conn.conn_handle,
                      event->disconnect.reason);
+
+            // Zanshin: Zastavíme sťahovanie z disku, ak sa Android odpojil
+            storage_abort_stream();
+
             conn_handle = BLE_HS_CONN_HANDLE_NONE;  // Uvoľníme spojenie
             ble_app_advertise();  // Automatická obnova viditeľnosti
             break;

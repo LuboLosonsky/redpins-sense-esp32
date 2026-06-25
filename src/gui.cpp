@@ -381,6 +381,11 @@ extern "C" void gui_task(void* arg) {
     gpio_set_direction((gpio_num_t)BOOT_BUTTON_PIN, GPIO_MODE_INPUT);
     gpio_set_pull_mode((gpio_num_t)BOOT_BUTTON_PIN, GPIO_PULLUP_ONLY);
 
+    // Zanshin: Načítame a aplikujeme uloženú rotáciu EŠTE PRED bootovacou
+    // obrazovkou. Predvolená "rovná" orientácia displeja vyžaduje (true, true).
+    bool s_display_rotated = app_config_get()->display_rotated;
+    esp_lcd_panel_mirror(panel_handle, !s_display_rotated, !s_display_rotated);
+
     // --- 1. BOOT SEQUENCE (Tvoj vysnívaný start-up log) ---
     display_clear(THEME_BG);
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -459,19 +464,25 @@ extern "C" void gui_task(void* arg) {
                     else if (selected_option_idx == 4)
                         graph_flip_interval_ms = 30000;
                     // idx 5 je Back (nič nerobíme)
+                } else if (current_screen == 4) {
+                    if (selected_option_idx == 0) {
+                        s_display_rotated = !s_display_rotated;
+                        // Zanshin: HW rotácia o 180° = zrkadlenie v oboch
+                        // osiach súčasne
+                        esp_lcd_panel_mirror(panel_handle, !s_display_rotated,
+                                             !s_display_rotated);
+                        app_config_get()->display_rotated = s_display_rotated;
+                        app_config_save();
+                    }
+                    // idx 1 je Back (nič nerobíme)
                 }
                 is_in_options = false;
                 force_redraw = true;
                 display_clear(THEME_BG);
             } else {
-                // Otvorenie Options pre aktuálnu obrazovku
-                is_in_options = true;
-                selected_option_idx = 0;
-                force_redraw = true;
-                display_clear(THEME_BG);
                 // Zanshin: Zamedzenie uviaznutia. Menu otvoríme len tam, kde
-                // reálne sú nastavenia (Grafy)
-                if (current_screen == 3) {
+                // reálne sú nastavenia (Grafy a Systém)
+                if (current_screen == 3 || current_screen == 4) {
                     is_in_options = true;
                     selected_option_idx = 0;
                     force_redraw = true;
@@ -486,7 +497,12 @@ extern "C" void gui_task(void* arg) {
                 (now_ms - btn_press_time > 50)) {  // 50ms debounce
                 if (is_in_options) {
                     // Cyklovanie možností v menu
-                    int opt_count = (current_screen == 3) ? 6 : 1;
+                    int opt_count = 1;
+                    if (current_screen == 3)
+                        opt_count = 6;
+                    else if (current_screen == 4)
+                        opt_count = 2;
+
                     selected_option_idx = (selected_option_idx + 1) % opt_count;
                     force_redraw = true;
                 } else {
@@ -568,10 +584,19 @@ extern "C" void gui_task(void* arg) {
                 const char* opt_graph[] = {"1 Den",       "3 Dni",
                                            "7 Dni",       "Rotacia 15s",
                                            "Rotacia 30s", "Back"};
+                const char* opt_sys[] = {"Otocit o 180", "Back"};
                 const char* opt_default[] = {"Back"};
-                const char** options =
-                    (current_screen == 3) ? opt_graph : opt_default;
-                int count = (current_screen == 3) ? 6 : 1;
+
+                const char** options = opt_default;
+                int count = 1;
+
+                if (current_screen == 3) {
+                    options = opt_graph;
+                    count = 6;
+                } else if (current_screen == 4) {
+                    options = opt_sys;
+                    count = 2;
+                }
 
                 for (int i = 0; i < count; i++) {
                     uint16_t fg =

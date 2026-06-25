@@ -10,11 +10,14 @@
 static const char* TAG = "APP_CONFIG";
 
 // Zanshin: Predvolené hodnoty (Žilina, Slovensko ako Single Source of Truth)
-static app_config_t s_config = {.lat = 49.2231f,
-                                .lon = 18.7394f,
-                                .alias = "Redpins Sense",
-                                .dht_temp_offset = 0.0f,
-                                .bmp_temp_offset = 0.0f};
+static app_config_t s_config = {
+    .lat = 49.2231f,
+    .lon = 18.7394f,
+    .alias = "Redpins Sense",
+    .weather_api_key = "bf45f6a7032650a46b26e01d879cb436",
+    .dht_temp_offset = 0.0f,
+    .bmp_temp_offset = 0.0f,
+    .display_rotated = false};
 
 app_config_t* app_config_get(void) { return &s_config; }
 
@@ -69,6 +72,14 @@ void app_config_init(void) {
             s_config.alias[sizeof(s_config.alias) - 1] = '\0';
         }
 
+        cJSON* api_key = cJSON_GetObjectItem(json, "weather_api_key");
+        if (cJSON_IsString(api_key) && api_key->valuestring != NULL) {
+            strncpy(s_config.weather_api_key, api_key->valuestring,
+                    sizeof(s_config.weather_api_key) - 1);
+            s_config.weather_api_key[sizeof(s_config.weather_api_key) - 1] =
+                '\0';
+        }
+
         cJSON* dht_off = cJSON_GetObjectItem(json, "dht_off");
         if (cJSON_IsNumber(dht_off))
             s_config.dht_temp_offset = dht_off->valuedouble;
@@ -76,6 +87,10 @@ void app_config_init(void) {
         cJSON* bmp_off = cJSON_GetObjectItem(json, "bmp_off");
         if (cJSON_IsNumber(bmp_off))
             s_config.bmp_temp_offset = bmp_off->valuedouble;
+
+        cJSON* disp_rot = cJSON_GetObjectItem(json, "disp_rot");
+        if (cJSON_IsBool(disp_rot))
+            s_config.display_rotated = cJSON_IsTrue(disp_rot);
 
         cJSON_Delete(json);
 
@@ -105,8 +120,10 @@ void app_config_save(void) {
     cJSON_AddNumberToObject(json, "lat", s_config.lat);
     cJSON_AddNumberToObject(json, "lon", s_config.lon);
     cJSON_AddStringToObject(json, "alias", s_config.alias);
+    cJSON_AddStringToObject(json, "weather_api_key", s_config.weather_api_key);
     cJSON_AddNumberToObject(json, "dht_off", s_config.dht_temp_offset);
     cJSON_AddNumberToObject(json, "bmp_off", s_config.bmp_temp_offset);
+    cJSON_AddBoolToObject(json, "disp_rot", s_config.display_rotated);
 
     // Bezpečné uloženie bez zbytočného formátovania (šetríme miesto v LittleFS)
     char* json_str = cJSON_PrintUnformatted(json);

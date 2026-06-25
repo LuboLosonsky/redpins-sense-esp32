@@ -30,13 +30,7 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "========== REDPINS SENSE INIT ZACINA ==============");
     ESP_LOGI(TAG, "=====================================================");
 
-    // Zanshin: Zhasnutie bieleho indikátora (jednoduchá LED na GPIO 8)
-    // Tento pin je "strapping pin", bootloader ho nechá v HIGH stave, čo
-    // rozsvieti LED. Prevezmeme nad ním kontrolu a zhasneme ho.
-    gpio_reset_pin((gpio_num_t)8);
-    gpio_set_direction((gpio_num_t)8, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)8, 1);  // 1 = zhasnúť (LED je zapojená na 3.3V,
-                                       // zhasína sa privedením HIGH)
+    // GPIO8 je vyhradeny pre I2C SDA, preto ho nepouzivame ako vystup pre LED.
 
     // 1. Inicializácia NVS (Kritické pre ukladanie kalibrácie, WiFi a
     // fungovanie BLE)
@@ -62,32 +56,32 @@ extern "C" void app_main(void) {
     // config.json
     app_config_init();
 
-    // 3. Inicializácia senzorov (DHT11)
-    sensor_core_init();
-
     // 3. Hardvérová abstrakcia (SPI pre LCD)
     display_hal_init();
+
+    // 4. Inicializácia senzorov (BME280/BH1750 diagnostika na I2C)
+    sensor_core_init();
 
     // Zanshin: Odstránili sme synchrónne testovacie kreslenie v main(),
     // pretože preťažovalo asynchrónnu DMA frontu. Vykresľovanie od
     // tohto momentu obsluhuje výhradne gui_task s dodržaním časovania.
 
-    // 4. Inicializácia BLE (NimBLE stack) - Expozícia RCP v2.1
+    // 5. Inicializácia BLE (NimBLE stack) - Expozícia RCP v2.1
     ble_server_init();
 
-    // 5. Registrácia FreeRTOS taskov
+    // 6. Registrácia FreeRTOS taskov
     sensor_core_start_task();
     weather_client_init();
 
     xTaskCreate(gui_task, "gui_task", 4096, NULL, 2, NULL);
 
-    // 6. Pokus o automatické pripojenie na známu Wi-Fi sieť z config.json
+    // 7. Pokus o automatické pripojenie na známu Wi-Fi sieť z config.json
     // Poznámka: Pôvodné volanie wifi_scanner_auto_connect() by malo byť
     // nahradené logikou, ktorá číta g_app_config.wifi_ssid a
     // g_app_config.wifi_password.
     wifi_scanner_auto_connect();  // <- Refaktorovať na použitie app_config
 
-    // 7. Hlavná slučka (Wu Wei - žiadna práca navyše, uvoľnenie prostriedkov)
+    // 8. Hlavná slučka (Wu Wei - žiadna práca navyše, uvoľnenie prostriedkov)
     while (true) {
         // Systém prechádza do riadenia cez FreeRTOS eventy a prerušenia
         vTaskDelay(pdMS_TO_TICKS(5000));

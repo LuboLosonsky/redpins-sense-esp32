@@ -23,28 +23,28 @@
 - **HMI & UX Vylepšenia:** Systémová obrazovka presunutá na koniec rotácie (index 3). Vykresľuje detailné dáta menším fontom (IP, GPS, Kalibrácia, Úložisko). Počasie sťahuje a zobrazuje názov mesta z OWM (vrátane bez-alokačného `in-place` filtra diakritiky).
 
 ## AKTUALIZÁCIA STAVU (Handoff)
-**Dátum:** Koniec session (Pokročilé HMI a Fail-Safe Storage)
-**Fáza:** Finalizácia C++ kódu, Príprava na Android Core
-**Status:** 🟢 STABILIZOVANÉ (Bez-blikania, Atomic úložisko)
+**Dátum:** Koniec session (RCP V2.3 a Finálne HMI ESP32)
+**Fáza:** Prechod na Android Core
+**Status:** 🟢 STABILIZOVANÉ A PRIPRAVENÉ NA ORCHESTRÁCIU
 
 **Čo sa implementovalo v poslednej session:**
-- **Fail-Safe Úložisko:** 4-kroková atomic rotácia logov v `storage.cpp` chráni pred korupciou CSV pri výpadku prúdu.
-- **State Caching (HMI):** Odstránené preblikávanie GUI pri aktualizácii hodnôt. Obrazovka reaguje stabilne a šetrí SPI zbernicu.
-- **Prémiové UX funkcie:** Zavedený 3-stĺpcový dizajn pre "H2O Asistenta vetrania" a "Kvalitu ovzdušia (AQI/PM2.5)". Všetko beží s `O(1)` RAM komplexitou.
-- **Oprava ovládania:** Odstránená pasca "mŕtveho" kontextového menu na obrazovkách bez nastavení.
+- **Zjednotené 5-Screen HMI:** Rozšírenie na 5 plynule rotujúcich obrazoviek. Pridaná nová obrazovka "ATMOSPHERE" pre veľké zobrazenie AQI/PM2.5 a tlaku. Dizajn dlaždíc unifikovaný na pixel-perfect okraje naprieč celým systémom.
+- **O(1) Barometrický Trend:** Kruhový buffer v SRAM (72 bajtov) drží 3-hodinovú históriu tlaku. Automatický výpočet trendu z LittleFS a elegantné zobrazenie formou textových znakov (`^`, `v`, `-`) pre šetrenie Heapu.
+- **Striktná Integrita Dát (RCP V2.3):** Úplný prepis sťahovania histórie (Delta Sync) cez charakteristiku A104. Implementovaný Binary Framing (5-bajtová obálka pre dĺžku payloadu), unikátne tagovanie streamov (0xA3/0xA4), NTP Guard a Dynamic Headers pre Android parser.
+- **Auto-Migrácia a Abort Guard:** Zariadenie pri štarte samo deteguje staré hlavičky CSV súborov a bezpečne ich migruje. Pridaná ochrana proti kolíziám – nový zápis na A103 alebo odpojenie Androidu okamžite, čisto a bezpečne zruší bežiaci dump na A104.
 
 **Kroky pre ďalšiu session (Otvorené úlohy):**
-1. **ESP32 HMI - Barometrický trend:** Doplniť na obrazovku počasia predikciu (šípky) podľa offline histórie tlaku z LittleFS.
-2. **Android Core (Bluetooth):** Implementácia prúdového parsera `DataStreamHandler` v Androide pre bezpečné spájanie `0xFD` (JSON) a `0xFE` (CSV) chunkov z charakteristiky A104 a ich import do Room databázy.
+1. **Android Core - RCP V2.3 Parser (Java/Kotlin):** Pripraviť projekt na strane smartfónu. Vybudovať nový `DataStreamHandler`, ktorý zachytáva 5-bajtové obálky, spája 20-bajtové chunky, automaticky extrahuje mapovanie z Dynamic Header (0. riadok) a okamžite ukladá prúdové dáta do Room DB bez preťažovania Heapu (bez zbytočného `StringBuilder`).
 
 [UPDATE-REDPINS-STATE]
-Dátum: [Dnešný dátum]
-Fáza: Firmware C++ Stabilizovaný (RCP v2.1)
+Dátum: 2026-06-08 (Aktuálna fáza)
+Fáza: ESP32 Firmware Uzavretý (RCP v2.3) -> Prechod na Android Core
 
 1. HMI a Displej:
 - Rozšírené na 5 rotujúcich obrazoviek (Sensors, Weather, Atmosphere, Temperature, System).
 - Nová obrazovka "Atmosphere" obsahuje čistý a veľký layout pre kvalitu ovzdušia a barometrický tlak.
 - Opravené indexovanie menu a rotácie po partial-merge konflikte. Displej je plne responzívny (bez alokácie na Heape).
+- Pridaná možnosť HW rotácie displeja o 180° s perzistenciou v `config.json`, ktorá sa aplikuje okamžite pri boote.
 
 2. Úložisko a Barometria (storage.cpp):
 - Implementovaný O(1) kruhový buffer (18 vzoriek / 72 bajtov v SRAM) pre 3-hodinový trend tlaku.
@@ -52,5 +52,9 @@ Fáza: Firmware C++ Stabilizovaný (RCP v2.1)
 - Trend sa zobrazuje v GUI ako textové znaky `^`, `v`, `-` bez bitmapovej fragmentácie pamäte.
 
 3. Architektúra a API (BLE):
-- Verzia protokolu (RCP v2.1) je implicitne rozpoznateľná pre Android cez JSON parameter `"hw":"C6-V1"`, ktorý sa odosiela v rámci SYS_INFO. Nevyžaduje dedikovanú charakteristiku.
+- Prechod na striktnú integritu RCP v2.3 (5-bajtová obálka, tagovanie streamov `0xA3`/`0xA4`).
+- Pripravené pre `DataStreamHandler` na strane Androidu (zamedzenie OOM pádov pri veľkých CSV prenosoch).
+
+4. Aktuálny cieľ (Android Core):
+- Implementácia `DataStreamHandler` v Kotline pre spracovanie 20-bajtových chunkov z `A104` do Room DB.
 [/UPDATE-REDPINS-STATE]

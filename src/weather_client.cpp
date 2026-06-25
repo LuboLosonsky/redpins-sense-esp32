@@ -66,18 +66,34 @@ static void weather_load_cache() {
     fclose(f);
 
     if (strlen(last_line) > 0) {
-        unsigned long ts;
-        float t;
-        int h, p, id;
-        if (sscanf(last_line, "%lu;%f;%d;%d;%d", &ts, &t, &h, &p, &id) == 5) {
-            s_w_temp = t;
-            s_w_hum = h;
-            s_w_press = p;
-            s_w_id = id;
-            s_w_valid = true;
-            ESP_LOGI(TAG,
-                     "Načítaná cache z disku: %.1f°C, %d%%, %dhPa, IconID: %d",
-                     t, h, p, id);
+        char* p1 = strchr(last_line, ';');
+        if (p1) {
+            char* p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char* p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    char* p4 = strchr(p3 + 1, ';');
+                    if (p4) {
+                        int len = p2 - (p1 + 1);
+                        if (len > 0 && len < sizeof(s_w_city)) {
+                            strncpy(s_w_city, p1 + 1, len);
+                            s_w_city[len] = '\0';
+                        } else {
+                            strcpy(s_w_city, "Nezname");
+                        }
+                        s_w_temp = atof(p2 + 1);
+                        s_w_hum = atoi(p3 + 1);
+                        s_w_press = atoi(p4 + 1);
+                        s_w_id = 0;  // Default fallback (po štarte ukáže oblak,
+                                     // kým nepríde API update)
+                        s_w_valid = true;
+                        ESP_LOGI(
+                            TAG,
+                            "Načítaná cache z disku: %s, %.1f°C, %d%%, %dhPa",
+                            s_w_city, s_w_temp, s_w_hum, s_w_press);
+                    }
+                }
+            }
         }
     }
 }
@@ -253,17 +269,11 @@ static void weather_fetch_task(void* arg) {
                 app_config_t* cfg = app_config_get();
                 char url[256];
 
-                // Dynamické URL podľa GPS alebo fallback na hardcoded API z
-                // hlavičky
-                if (cfg->lat != 0.0f || cfg->lon != 0.0f) {
-                    snprintf(url, sizeof(url),
-                             "http://api.openweathermap.org/data/2.5/"
-                             "weather?lat=%.4f&lon=%.4f&appid="
-                             "bf45f6a7032650a46b26e01d879cb436&units=metric",
-                             cfg->lat, cfg->lon);
-                } else {
-                    snprintf(url, sizeof(url), "%s", WEATHER_API_URL);
-                }
+                // Dynamické URL podľa GPS a kľúča z config.json
+                snprintf(url, sizeof(url),
+                         "http://api.openweathermap.org/data/2.5/"
+                         "weather?lat=%.4f&lon=%.4f&appid=%s&units=metric",
+                         cfg->lat, cfg->lon, cfg->weather_api_key);
 
                 ESP_LOGI(TAG, "Pripravené API URL: %s", url);
 
@@ -362,8 +372,8 @@ static void weather_fetch_task(void* arg) {
                                     }
 
                                     storage_log_weather_data((unsigned long)now,
-                                                             temp, hum, press,
-                                                             weather_id);
+                                                             s_w_city, temp,
+                                                             hum, press);
 
                                     // Uloženie do RAM pre zobrazenie v GUI
                                     // Tasku
@@ -398,8 +408,8 @@ static void weather_fetch_task(void* arg) {
                             snprintf(url, sizeof(url),
                                      "http://api.openweathermap.org/data/2.5/"
                                      "air_pollution?lat=%.4f&lon=%.4f&appid="
-                                     "bf45f6a7032650a46b26e01d879cb436",
-                                     cfg->lat, cfg->lon);
+                                     "%s",
+                                     cfg->lat, cfg->lon, cfg->weather_api_key);
 
                             esp_http_client_config_t aqi_config = {};
                             aqi_config.url = url;

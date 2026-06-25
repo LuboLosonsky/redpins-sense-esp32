@@ -137,3 +137,49 @@ Lineárne vyhľadávanie je nahradené binárnym vyhľadávaním nad súborom (v
 ###
 ---
 *Posledná aktualizácia: 2026-05-17 (Zanshin Update V2.1)*
+
+## **7. Striktná Atomizácia a Sebaidentifikácia (RCP V2.3)**
+
+**Cieľ:** Odstránenie stavovej nejednoznačnosti a podpora pre multi-device orchestráciu.
+
+### **7.1 Striktná identifikácia streamu (Stream Tagging)**
+
+Každý prúd dát na charakteristike **A104** musí začínať unikátnou binárnou hlavičkou (Mode Byte), ktorá nahrádza generický identifikátor `0xFE`.
+
+| Mode Byte | Účel | Formát |
+| :---- | :---- | :---- |
+| **0xA3** | Local Sensor CSV Dump | CSV (ts;t;h;p;b) |
+| **0xA4** | Weather API CSV Dump | CSV (ts;city;t;...) |
+| **0xA5** | System Logs / Debug Dump | Text / CSV |
+| **0xFD** | System JSON (Info/WiFi) | JSON String |
+
+### **7.2 Povinný Binary Envelope (Data Framing)**
+
+Každý prenos musí byť zabalený do fixnej 5-bajtovej obálky pre presné určenie konca prenosu bez potreby EOF terminátorov.
+
+**Štruktúra hlavičky (Client <- ESP32):**
+
+| Bajt offset | Typ | Význam | Poznámka |
+| :---- | :---- | :---- | :---- |
+| 0x00 | uint8\_t | Mode Byte | Pozri tabuľku 7.1 |
+| 0x01 \- 0x04 | uint32\_t | Payload Size | Celková dĺžka dát v bajtoch (**Little Endian**) |
+
+### **7.3 Časová integrita (NTP Guard)**
+
+ESP32 **nesmie** odosielať historické CSV dáta (módy 0xA3, 0xA4), kým nemá úspešne synchronizovaný systémový čas cez NTP.
+*   Ak čas nie je synchronizovaný, ESP32 vráti v hlavičke `Payload Size = 0`.
+*   Android orchestrátor v tomto stave zobrazí upozornenie „Waiting for Time Sync“.
+
+### **7.4 Verziovaný formát riadku (Dynamic Header)**
+
+Každý CSV stream **MUSÍ** začať riadkom definujúcim stĺpce pre dynamický parsing na strane Androidu.
+*   *Príklad SENS:* `ts;t;h;p;b` (timestamp, temp, hum, pres, bat)
+*   *Príklad WXT:* `ts;city;t;h;p`
+
+### **7.5 Prevencia kolízií**
+
+*   ESP32 musí pred začatím nového streamu (napr. po príkaze 0x23) násilne ukončiť akýkoľvek prebiehajúci prenos na charakteristike A104.
+*   Zásada: Jedna charakteristika = Jeden logický tok v reálnom čase.
+
+---
+*Posledná aktualizácia: 2026-06-08 (RCP V2.3 - Strict Integrity)*

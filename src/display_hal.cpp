@@ -26,13 +26,8 @@ esp_lcd_panel_handle_t panel_handle = NULL;
 esp_err_t display_hal_init(void) {
     ESP_LOGI(TAG, "Inicializácia SPI zbernice");
 
-    // Zanshin: Hardvérová blokáda odhalená v špecifikácii!
-    // SD karta zdieľa CLK a MOSI s displejom. Ak je jej CS (GPIO4) voľný
-    // (floating), ruší celú zbernicu. Musíme ju natvrdo uspať nastavením na
-    // HIGH.
-    gpio_reset_pin((gpio_num_t)4);
-    gpio_set_direction((gpio_num_t)4, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)4, 1);
+    // GPIO4 je pouzity ako I2C SDA pre externe senzory (BME280/BH1750).
+    // Nesmie sa tu prepinat do OUTPUT modu, inak sa zablokuje I2C zbernica.
 
     // Zanshin: Pre-inicializácia LCD CS (Chip Select).
     // Zabezpečí, že ST7789 ignoruje akýkoľvek šum na zbernici počas bootu,
