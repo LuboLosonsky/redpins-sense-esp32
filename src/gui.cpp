@@ -402,7 +402,11 @@ extern "C" void gui_task(void* arg) {
     gui_draw_string(5, 70, "WiFi ........ OK", BOOT_OK_FG, THEME_BG, 1);
     vTaskDelay(pdMS_TO_TICKS(400));
 
-    gui_draw_string(5, 85, "Sensors ..... OK", BOOT_OK_FG, THEME_BG, 1);
+    bool weather_sensor_ok = sensor_core_weather_sensor_ok();
+    gui_draw_string(
+        5, 85,
+        weather_sensor_ok ? "Weather senzor .. OK" : "Weather senzor .. FAIL",
+        weather_sensor_ok ? BOOT_OK_FG : SYS_WIFI_ERR_FG, THEME_BG, 1);
     vTaskDelay(pdMS_TO_TICKS(1500));  // Necháme používateľa chvíľu sa pokochať
 
     display_clear(THEME_BG);
@@ -434,6 +438,7 @@ extern "C" void gui_task(void* arg) {
     int cache_wh = -999, cache_wp = -999, cache_wid = -999;
     int cache_aqi = -999;
     float cache_pm25 = -999;
+    int cache_weather_sensor_ok = -1;
 
     while (1) {
         uint32_t now_ms = esp_timer_get_time() / 1000;
@@ -664,6 +669,20 @@ extern "C" void gui_task(void* arg) {
                         gui_draw_string(ux_t + 6, box_y + 35, "C",
                                         DASH_TEMP_UNIT, THEME_BG, 2);
                         cache_t = t;
+                    }
+
+                    int weather_ok_now =
+                        sensor_core_weather_sensor_ok() ? 1 : 0;
+                    if (force_redraw ||
+                        weather_ok_now != cache_weather_sensor_ok) {
+                        gui_draw_rect(bx2 + 12, box_y2 + 3, 280, 12, THEME_BG);
+                        gui_draw_string(
+                            bx2 + 12, box_y2 + 3,
+                            weather_ok_now ? "WEATHER SENZOR: OK"
+                                           : "WEATHER SENZOR: FAIL",
+                            weather_ok_now ? SYS_WIFI_OK_FG : SYS_WIFI_ERR_FG,
+                            THEME_BG, 1);
+                        cache_weather_sensor_ok = weather_ok_now;
                     }
 
                     if (force_redraw || h != cache_h) {

@@ -15,10 +15,12 @@
 static const char* TAG = "SENSOR_CORE";
 
 #define I2C_PORT I2C_NUM_0
-#define I2C_SDA_PIN GPIO_NUM_19
-#define I2C_SCL_PIN GPIO_NUM_20
+#define I2C_SDA_PIN GPIO_NUM_0
+#define I2C_SCL_PIN GPIO_NUM_1
 #define I2C_FREQ_HZ 100000
+#define I2C_FALLBACK_FREQ_HZ 10000
 #define ENABLE_BH1750 0
+#define SENSOR_CORE_DEBUG_I2C 0
 
 #define BME280_ADDR_1 0x76
 #define BME280_ADDR_2 0x77
@@ -43,6 +45,16 @@ static gpio_num_t s_i2c_sda = I2C_SDA_PIN;
 static gpio_num_t s_i2c_scl = I2C_SCL_PIN;
 static uint32_t s_i2c_freq_hz = I2C_FREQ_HZ;
 static bool s_i2c_driver_installed = false;
+static bool s_bme_use_bitbang = false;
+static bool s_weather_sensor_ok = false;
+
+#if SENSOR_CORE_DEBUG_I2C
+#define I2C_DBGI(...) ESP_LOGI(TAG, __VA_ARGS__)
+#define I2C_DBGW(...) ESP_LOGW(TAG, __VA_ARGS__)
+#else
+#define I2C_DBGI(...) ((void)0)
+#define I2C_DBGW(...) ((void)0)
+#endif
 
 static float s_last_t = 0.0f;
 static float s_last_h = 0.0f;
@@ -137,22 +149,20 @@ static void diagnose_gpio_wiggle(gpio_num_t sda, gpio_num_t scl,
     gpio_set_direction(sda, GPIO_MODE_INPUT);
     gpio_set_direction(scl, GPIO_MODE_INPUT);
 
-    ESP_LOGI(TAG, "GPIO wiggle (%s): HH[%d,%d] LH[%d,%d] HL[%d,%d] LL[%d,%d]",
-             label, hh_sda, hh_scl, lh_sda, lh_scl, hl_sda, hl_scl, ll_sda,
-             ll_scl);
-    ESP_LOGI(TAG, "GPIO rise (%s): SDA=%luus SCL=%luus", label,
+    I2C_DBGI("GPIO wiggle (%s): HH[%d,%d] LH[%d,%d] HL[%d,%d] LL[%d,%d]", label,
+             hh_sda, hh_scl, lh_sda, lh_scl, hl_sda, hl_scl, ll_sda, ll_scl);
+    I2C_DBGI("GPIO rise (%s): SDA=%luus SCL=%luus", label,
              (unsigned long)rise_sda_us, (unsigned long)rise_scl_us);
 
     if (lh_scl == 0 || hl_sda == 0) {
-        ESP_LOGW(TAG,
-                 "GPIO wiggle (%s): mozne prepojenie/skrat medzi SDA a SCL",
+        I2C_DBGW("GPIO wiggle (%s): mozne prepojenie/skrat medzi SDA a SCL",
                  label);
     }
     if (rise_sda_us >= 200 || rise_scl_us >= 200) {
-        ESP_LOGW(TAG,
-                 "GPIO rise (%s): velmi slaby/chybajuci pull-up (odporucam "
-                 "externy 4.7k)",
-                 label);
+        I2C_DBGW(
+            "GPIO rise (%s): velmi slaby/chybajuci pull-up (odporucam "
+            "externy 4.7k)",
+            label);
     }
 }
 
@@ -166,13 +176,42 @@ static void diagnose_line_levels(gpio_num_t sda, gpio_num_t scl,
 
     int sda_lvl = gpio_get_level(sda);
     int scl_lvl = gpio_get_level(scl);
-    ESP_LOGI(TAG, "I2C line state (%s): SDA=%d SCL=%d", stage, sda_lvl,
-             scl_lvl);
+    I2C_DBGI("I2C line state (%s): SDA=%d SCL=%d", stage, sda_lvl, scl_lvl);
     if (sda_lvl == 0 || scl_lvl == 0) {
-        ESP_LOGW(TAG,
-                 "I2C line low (%s): SDA=%d SCL=%d (mozne skraty/pin conflict)",
+        I2C_DBGW("I2C line low (%s): SDA=%d SCL=%d (mozne skraty/pin conflict)",
                  stage, sda_lvl, scl_lvl);
     }
+}
+
+static void i2c_force_recover_bus(gpio_num_t sda, gpio_num_t scl) {
+    gpio_reset_pin(sda);
+    gpio_reset_pin(scl);
+    gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(scl, GPIO_PULLUP_ONLY);
+    gpio_set_direction(sda, GPIO_MODE_INPUT_OUTPUT_OD);
+    gpio_set_direction(scl, GPIO_MODE_INPUT_OUTPUT_OD);
+
+    gpio_set_level(sda, 1);
+    gpio_set_level(scl, 1);
+    esp_rom_delay_us(10);
+
+    // 9 clocks uvolni stuck slave, potom explicitny STOP.
+    for (int i = 0; i < 9; ++i) {
+        gpio_set_level(scl, 0);
+        esp_rom_delay_us(5);
+        gpio_set_level(scl, 1);
+        esp_rom_delay_us(5);
+    }
+
+    gpio_set_level(sda, 0);
+    esp_rom_delay_us(5);
+    gpio_set_level(scl, 1);
+    esp_rom_delay_us(5);
+    gpio_set_level(sda, 1);
+    esp_rom_delay_us(5);
+
+    gpio_set_direction(sda, GPIO_MODE_INPUT);
+    gpio_set_direction(scl, GPIO_MODE_INPUT);
 }
 
 static bool i2c_setup_bus(gpio_num_t sda, gpio_num_t scl, uint32_t freq_hz,
@@ -182,9 +221,14 @@ static bool i2c_setup_bus(gpio_num_t sda, gpio_num_t scl, uint32_t freq_hz,
         s_i2c_driver_installed = false;
     }
 
-    diagnose_gpio_wiggle(sda, scl, label ? label : "pre-i2c-setup");
+    if (SENSOR_CORE_DEBUG_I2C) {
+        diagnose_gpio_wiggle(sda, scl, label ? label : "pre-i2c-setup");
+    }
+    i2c_force_recover_bus(sda, scl);
 
-    diagnose_line_levels(sda, scl, "pre-init");
+    if (SENSOR_CORE_DEBUG_I2C) {
+        diagnose_line_levels(sda, scl, "pre-init");
+    }
 
     i2c_config_t i2c_cfg = {};
     i2c_cfg.mode = I2C_MODE_MASTER;
@@ -205,7 +249,9 @@ static bool i2c_setup_bus(gpio_num_t sda, gpio_num_t scl, uint32_t freq_hz,
     s_i2c_freq_hz = freq_hz;
     ESP_LOGI(TAG, "I2C init: SDA=%d, SCL=%d, FREQ=%lu", s_i2c_sda, s_i2c_scl,
              (unsigned long)s_i2c_freq_hz);
-    diagnose_line_levels(sda, scl, "post-init");
+    if (SENSOR_CORE_DEBUG_I2C) {
+        diagnose_line_levels(sda, scl, "post-init");
+    }
     return true;
 }
 
@@ -266,64 +312,328 @@ static esp_err_t i2c_write_bytes(uint8_t dev_addr, const uint8_t* data,
 }
 
 static esp_err_t i2c_write_reg_u8(uint8_t dev_addr, uint8_t reg, uint8_t val) {
+    if (s_bme_use_bitbang && dev_addr == s_bme_addr) {
+        auto bb_delay = []() { esp_rom_delay_us(3); };
+        auto set_sda = [&](int lvl) {
+            gpio_set_level(s_i2c_sda, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto set_scl = [&](int lvl) {
+            gpio_set_level(s_i2c_scl, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto write_byte = [&](uint8_t b) {
+            for (int i = 7; i >= 0; --i) {
+                set_sda((b >> i) & 0x01);
+                set_scl(1);
+                set_scl(0);
+            }
+            set_sda(1);
+            set_scl(1);
+            bool ack = (gpio_get_level(s_i2c_sda) == 0);
+            set_scl(0);
+            return ack;
+        };
+
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT_OUTPUT_OD);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT_OUTPUT_OD);
+
+        // START
+        set_sda(1);
+        set_scl(1);
+        set_sda(0);
+        set_scl(0);
+
+        bool ok = write_byte((uint8_t)((dev_addr << 1) | 0x00)) &&
+                  write_byte(reg) && write_byte(val);
+
+        // STOP
+        set_sda(0);
+        set_scl(1);
+        set_sda(1);
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT);
+        return ok ? ESP_OK : ESP_FAIL;
+    }
+
     uint8_t payload[2] = {reg, val};
     return i2c_write_bytes(dev_addr, payload, sizeof(payload));
 }
 
 static esp_err_t i2c_read_reg(uint8_t dev_addr, uint8_t reg, uint8_t* data,
                               size_t len) {
+    if (s_bme_use_bitbang && dev_addr == s_bme_addr) {
+        auto bb_delay = []() { esp_rom_delay_us(3); };
+        auto set_sda = [&](int lvl) {
+            gpio_set_level(s_i2c_sda, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto set_scl = [&](int lvl) {
+            gpio_set_level(s_i2c_scl, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto write_byte = [&](uint8_t b) {
+            for (int i = 7; i >= 0; --i) {
+                set_sda((b >> i) & 0x01);
+                set_scl(1);
+                set_scl(0);
+            }
+            set_sda(1);
+            set_scl(1);
+            bool ack = (gpio_get_level(s_i2c_sda) == 0);
+            set_scl(0);
+            return ack;
+        };
+        auto read_byte = [&](bool master_ack) {
+            uint8_t b = 0;
+            set_sda(1);
+            for (int i = 7; i >= 0; --i) {
+                set_scl(1);
+                if (gpio_get_level(s_i2c_sda)) b |= (uint8_t)(1U << i);
+                set_scl(0);
+            }
+            set_sda(master_ack ? 0 : 1);
+            set_scl(1);
+            set_scl(0);
+            set_sda(1);
+            return b;
+        };
+
+        if (!data || len == 0) {
+            gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT);
+            gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT);
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT_OUTPUT_OD);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT_OUTPUT_OD);
+
+        // START + write register address
+        set_sda(1);
+        set_scl(1);
+        set_sda(0);
+        set_scl(0);
+
+        bool ok =
+            write_byte((uint8_t)((dev_addr << 1) | 0x00)) && write_byte(reg);
+
+        // Repeated START + read
+        set_sda(1);
+        set_scl(1);
+        set_sda(0);
+        set_scl(0);
+
+        ok = ok && write_byte((uint8_t)((dev_addr << 1) | 0x01));
+        if (ok) {
+            for (size_t i = 0; i < len; ++i) {
+                data[i] = read_byte((i + 1) < len);
+            }
+        }
+
+        // STOP
+        set_sda(0);
+        set_scl(1);
+        set_sda(1);
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT);
+        return ok ? ESP_OK : ESP_FAIL;
+    }
+
     return i2c_master_write_read_device(I2C_PORT, dev_addr, &reg, 1, data, len,
                                         pdMS_TO_TICKS(100));
 }
 
-static bool probe_device_ex(uint8_t addr, esp_err_t* out_err) {
+static bool probe_device_ex_timeout(uint8_t addr, esp_err_t* out_err,
+                                    TickType_t timeout_ticks) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_stop(cmd);
-    esp_err_t err = i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(100));
+    esp_err_t err = i2c_master_cmd_begin(I2C_PORT, cmd, timeout_ticks);
     i2c_cmd_link_delete(cmd);
     if (out_err) *out_err = err;
     return err == ESP_OK;
 }
 
+static bool probe_device_ex(uint8_t addr, esp_err_t* out_err) {
+    return probe_device_ex_timeout(addr, out_err, pdMS_TO_TICKS(100));
+}
+
+static bool bitbang_probe_addr(gpio_num_t sda, gpio_num_t scl, uint8_t addr) {
+    gpio_reset_pin(sda);
+    gpio_reset_pin(scl);
+    gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(scl, GPIO_PULLUP_ONLY);
+    gpio_set_direction(sda, GPIO_MODE_INPUT_OUTPUT_OD);
+    gpio_set_direction(scl, GPIO_MODE_INPUT_OUTPUT_OD);
+
+    auto bb_delay = []() { esp_rom_delay_us(3); };
+    auto set_sda = [&](int lvl) {
+        gpio_set_level(sda, lvl ? 1 : 0);
+        bb_delay();
+    };
+    auto set_scl = [&](int lvl) {
+        gpio_set_level(scl, lvl ? 1 : 0);
+        bb_delay();
+    };
+
+    // Idle high.
+    set_sda(1);
+    set_scl(1);
+
+    // START.
+    set_sda(0);
+    set_scl(0);
+
+    uint8_t byte = (uint8_t)((addr << 1) | 0x00);
+    for (int i = 7; i >= 0; --i) {
+        set_sda((byte >> i) & 0x01);
+        set_scl(1);
+        set_scl(0);
+    }
+
+    // ACK bit: release SDA and sample while SCL high.
+    set_sda(1);
+    set_scl(1);
+    int ack = (gpio_get_level(sda) == 0) ? 1 : 0;
+    set_scl(0);
+
+    // STOP.
+    set_sda(0);
+    set_scl(1);
+    set_sda(1);
+
+    gpio_set_direction(sda, GPIO_MODE_INPUT);
+    gpio_set_direction(scl, GPIO_MODE_INPUT);
+    return ack == 1;
+}
+
+static bool i2c_reinstall_current_bus() {
+    if (s_i2c_driver_installed) {
+        i2c_driver_delete(I2C_PORT);
+        s_i2c_driver_installed = false;
+    }
+
+    i2c_config_t i2c_cfg = {};
+    i2c_cfg.mode = I2C_MODE_MASTER;
+    i2c_cfg.sda_io_num = s_i2c_sda;
+    i2c_cfg.scl_io_num = s_i2c_scl;
+    i2c_cfg.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    i2c_cfg.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    i2c_cfg.master.clk_speed = s_i2c_freq_hz;
+
+    if (i2c_param_config(I2C_PORT, &i2c_cfg) != ESP_OK) return false;
+    if (i2c_driver_install(I2C_PORT, i2c_cfg.mode, 0, 0, 0) != ESP_OK)
+        return false;
+
+    s_i2c_driver_installed = true;
+    if (SENSOR_CORE_DEBUG_I2C) {
+        diagnose_line_levels(s_i2c_sda, s_i2c_scl, "post-bitbang-reinit");
+    }
+    return true;
+}
+
+static uint8_t log_bitbang_bme_probe() {
+    // Run only after normal I2C probing fails to separate driver-vs-physical
+    // ACK.
+    if (s_i2c_driver_installed) {
+        i2c_driver_delete(I2C_PORT);
+        s_i2c_driver_installed = false;
+    }
+
+    i2c_force_recover_bus(s_i2c_sda, s_i2c_scl);
+    bool ack76 = bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BME280_ADDR_1);
+    bool ack77 = bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BME280_ADDR_2);
+    int line_sda = gpio_get_level(s_i2c_sda);
+    int line_scl = gpio_get_level(s_i2c_scl);
+
+    ESP_LOGW(TAG, "BITBANG probe BME: 0x76=%s 0x77=%s (lines SDA=%d SCL=%d)",
+             ack76 ? "ACK" : "NOACK", ack77 ? "ACK" : "NOACK", line_sda,
+             line_scl);
+
+    if (!i2c_reinstall_current_bus()) {
+        ESP_LOGE(TAG, "I2C reinstall after bitbang failed");
+        return 0;
+    }
+
+    if (ack76) return BME280_ADDR_1;
+    if (ack77) return BME280_ADDR_2;
+    return 0;
+}
+
 static void log_i2c_scan_overview() {
+    if (!SENSOR_CORE_DEBUG_I2C) return;
+
     bool any = false;
     int ack_cnt = 0;
     int nack_cnt = 0;
     int timeout_cnt = 0;
     int other_cnt = 0;
+    int timeout_diag_budget = 4;
+    const TickType_t scan_probe_timeout = pdMS_TO_TICKS(20);
 
     for (int addr = 0x08; addr <= 0x77; ++addr) {
         esp_err_t err = ESP_FAIL;
-        if (probe_device_ex((uint8_t)addr, &err)) {
+        if (probe_device_ex_timeout((uint8_t)addr, &err, scan_probe_timeout)) {
             ESP_LOGI(TAG, "I2C scan: found device at 0x%02X", addr);
             any = true;
             ack_cnt++;
         } else if (err == ESP_ERR_TIMEOUT) {
             timeout_cnt++;
+
+            if (timeout_diag_budget > 0) {
+                int pre_sda = gpio_get_level(s_i2c_sda);
+                int pre_scl = gpio_get_level(s_i2c_scl);
+                ESP_LOGW(TAG,
+                         "I2C timeout @0x%02X: line sample A SDA=%d "
+                         "SCL=%d",
+                         addr, pre_sda, pre_scl);
+
+                // Keep diagnostics non-invasive while the I2C driver is active.
+                esp_rom_delay_us(100);
+
+                int post_sda = gpio_get_level(s_i2c_sda);
+                int post_scl = gpio_get_level(s_i2c_scl);
+                ESP_LOGW(TAG,
+                         "I2C timeout @0x%02X: line sample B SDA=%d "
+                         "SCL=%d",
+                         addr, post_sda, post_scl);
+
+                timeout_diag_budget--;
+            }
         } else if (err == ESP_FAIL) {
             nack_cnt++;
         } else {
             other_cnt++;
         }
+
+        // Long timeout-only scans can starve IDLE on C6 and trigger task_wdt.
+        if ((addr & 0x07) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
     }
 
+    int line_sda = gpio_get_level(s_i2c_sda);
+    int line_scl = gpio_get_level(s_i2c_scl);
     ESP_LOGI(TAG,
-             "I2C scan stats: ack=%d nack=%d timeout=%d other=%d (SDA=%d "
-             "SCL=%d FREQ=%lu)",
+             "I2C scan stats: ack=%d nack=%d timeout=%d other=%d "
+             "pins[SDA=%d SCL=%d] lines[SDA=%d SCL=%d] FREQ=%lu",
              ack_cnt, nack_cnt, timeout_cnt, other_cnt, s_i2c_sda, s_i2c_scl,
-             (unsigned long)s_i2c_freq_hz);
+             line_sda, line_scl, (unsigned long)s_i2c_freq_hz);
 
     if (!any) {
-        ESP_LOGW(TAG, "I2C scan: no devices found on SDA=%d SCL=%d FREQ=%lu",
-                 s_i2c_sda, s_i2c_scl, (unsigned long)s_i2c_freq_hz);
+        ESP_LOGW(TAG,
+                 "I2C scan: no devices found on pins[SDA=%d SCL=%d] "
+                 "lines[SDA=%d SCL=%d] FREQ=%lu",
+                 s_i2c_sda, s_i2c_scl, line_sda, line_scl,
+                 (unsigned long)s_i2c_freq_hz);
     }
 }
 
 static void detect_sensors_on_current_bus() {
     s_bme_addr = 0;
     s_bh_addr = 0;
+    s_bme_use_bitbang = false;
 
     esp_err_t err_bme1 = ESP_FAIL;
     esp_err_t err_bme2 = ESP_FAIL;
@@ -510,18 +820,71 @@ bool sensor_core_read_bh1750(float* lux) {
 }
 
 void sensor_core_init() {
-    ESP_LOGI(TAG, "I2C fixed config: SDA=%d SCL=%d FREQ=%lu", I2C_SDA_PIN,
-             I2C_SCL_PIN, (unsigned long)I2C_FREQ_HZ);
+    s_bme_use_bitbang = false;
+    s_weather_sensor_ok = false;
+
+    ESP_LOGI(TAG,
+             "Initializing Clean I2C Bus on GPIO 0 (SDA) and GPIO 1 (SCL)...");
     if (!i2c_setup_bus(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ,
-                       "fixed 19/20 @100k")) {
-        ESP_LOGE(TAG, "I2C setup zlyhal pre fixed map 19/20");
+                       "Fixed Bus 0/1")) {
+        ESP_LOGE(TAG, "I2C master bus setup failed on pins 0/1");
         return;
     }
 
     detect_sensors_on_current_bus();
 
     if (s_bme_addr == 0) {
+        ESP_LOGW(
+            TAG,
+            "BME280 not found. Running clear master diagnostics bus scan:");
         log_i2c_scan_overview();
+
+        uint8_t bb_bme_addr = log_bitbang_bme_probe();
+        if (bb_bme_addr != 0 && s_bme_addr == 0) {
+            ESP_LOGW(TAG,
+                     "Bitbang saw BME ACK at 0x%02X. Retrying I2C at %lu Hz.",
+                     bb_bme_addr, (unsigned long)I2C_FALLBACK_FREQ_HZ);
+
+            if (i2c_setup_bus(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FALLBACK_FREQ_HZ,
+                              "Fallback Bus 0/1 @10k")) {
+                detect_sensors_on_current_bus();
+            } else {
+                ESP_LOGE(TAG, "Fallback I2C bus setup failed at 10 kHz");
+            }
+
+            if (s_bme_addr == 0) {
+                if (s_i2c_driver_installed) {
+                    i2c_driver_delete(I2C_PORT);
+                    s_i2c_driver_installed = false;
+                }
+
+                s_bme_addr = bb_bme_addr;
+                s_bme_use_bitbang = true;
+
+                uint8_t bb_chip_id = 0;
+                if (i2c_read_reg(s_bme_addr, BME280_REG_ID, &bb_chip_id, 1) ==
+                        ESP_OK &&
+                    bb_chip_id == BME280_CHIP_ID) {
+                    ESP_LOGW(TAG,
+                             "BME280 software-I2C fallback enabled on 0x%02X",
+                             s_bme_addr);
+
+                    // Prepare bitbang lines once; runtime reads then avoid
+                    // gpio_reset_pin spam in logs.
+                    gpio_reset_pin(s_i2c_sda);
+                    gpio_reset_pin(s_i2c_scl);
+                    gpio_set_pull_mode(s_i2c_sda, GPIO_PULLUP_ONLY);
+                    gpio_set_pull_mode(s_i2c_scl, GPIO_PULLUP_ONLY);
+                } else {
+                    ESP_LOGE(TAG,
+                             "Software-I2C fallback chip-id check failed "
+                             "(id=0x%02X)",
+                             bb_chip_id);
+                    s_bme_addr = 0;
+                    s_bme_use_bitbang = false;
+                }
+            }
+        }
     }
 
     if (s_bme_addr != 0) {
@@ -536,16 +899,20 @@ void sensor_core_init() {
 
             if (bme280_read_calibration()) {
                 ESP_LOGI(TAG, "BME280 detegovany na adrese 0x%02X", s_bme_addr);
+                s_weather_sensor_ok = true;
             } else {
                 ESP_LOGE(TAG, "BME280 kalibracia zlyhala");
                 s_bme_addr = 0;
+                s_weather_sensor_ok = false;
             }
         } else {
             ESP_LOGE(TAG, "BME280 chip id mismatch (0x%02X)", chip_id);
             s_bme_addr = 0;
+            s_weather_sensor_ok = false;
         }
     } else {
         ESP_LOGW(TAG, "BME280 nebol najdeny (0x76/0x77)");
+        s_weather_sensor_ok = false;
     }
 
     if (s_bh_addr != 0) {
@@ -628,3 +995,5 @@ void sensor_core_get_latest_full(float* t, float* h, float* p_hpa, float* lux) {
     if (p_hpa) *p_hpa = s_last_p;
     if (lux) *lux = s_last_lux;
 }
+
+bool sensor_core_weather_sensor_ok() { return s_weather_sensor_ok; }

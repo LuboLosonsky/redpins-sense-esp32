@@ -19,3 +19,6 @@ void sensor_core_get_latest(float* t, float* h);
 
 // Rozšírený snapshot lokálnych senzorov.
 void sensor_core_get_latest_full(float* t, float* h, float* p_hpa, float* lux);
+
+// Stav hlavneho weather senzora (BME280): true = funkcny, false = fail.
+bool sensor_core_weather_sensor_ok();
