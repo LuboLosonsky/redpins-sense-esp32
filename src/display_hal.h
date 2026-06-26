@@ -20,3 +20,9 @@
 
 // Inicializuje SPI a esp_lcd panel (ST7789)
 esp_err_t display_hal_init(void);
+
+// Nastavi jas podsvietenia v percentach (0-100).
+void display_hal_set_backlight_percent(uint8_t percent);
+
+// Vrati aktualny jas podsvietenia v percentach (0-100).
+uint8_t display_hal_get_backlight_percent(void);

@@ -23,6 +23,10 @@
 static const char* TAG = "GUI";
 
 #define BOOT_BUTTON_PIN 9
+#define BTN_OK_PIN 2
+#define BTN_ESC_PIN 3
+#define BTN_UP_PIN 4
+#define BTN_DOWN_PIN 5
 extern esp_lcd_panel_handle_t panel_handle;
 extern "C" void display_clear(uint16_t color);
 
@@ -344,6 +348,21 @@ static float get_absolute_humidity(float t, float h) {
     return (2.16679f * pv * 100.0f) / (273.15f + t);
 }
 
+static uint8_t map_lux_to_backlight_percent(float lux) {
+    // Tuned for indoor comfort: softer low-light response, no harsh jumps.
+    if (lux < 2.0f) return 14;
+    if (lux < 6.0f) return 17;
+    if (lux < 15.0f) return 21;
+    if (lux < 35.0f) return 26;
+    if (lux < 80.0f) return 32;
+    if (lux < 180.0f) return 39;
+    if (lux < 400.0f) return 47;
+    if (lux < 900.0f) return 56;
+    if (lux < 2000.0f) return 66;
+    if (lux < 5000.0f) return 77;
+    return 88;
+}
+
 // --- IKONY PRE SENZORY (16x16, 1bpp) ---
 static const uint8_t i_thermometer[32] = {
     0x03, 0xC0, 0x04, 0x20, 0x04, 0x20, 0x05, 0xA0, 0x05, 0xA0, 0x05,
@@ -381,6 +400,16 @@ extern "C" void gui_task(void* arg) {
     gpio_set_direction((gpio_num_t)BOOT_BUTTON_PIN, GPIO_MODE_INPUT);
     gpio_set_pull_mode((gpio_num_t)BOOT_BUTTON_PIN, GPIO_PULLUP_ONLY);
 
+    // Externe tlacidla (aktivne v log. 0): OK, ESC, UP, DOWN
+    gpio_set_direction((gpio_num_t)BTN_OK_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode((gpio_num_t)BTN_OK_PIN, GPIO_PULLUP_ONLY);
+    gpio_set_direction((gpio_num_t)BTN_ESC_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode((gpio_num_t)BTN_ESC_PIN, GPIO_PULLUP_ONLY);
+    gpio_set_direction((gpio_num_t)BTN_UP_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode((gpio_num_t)BTN_UP_PIN, GPIO_PULLUP_ONLY);
+    gpio_set_direction((gpio_num_t)BTN_DOWN_PIN, GPIO_MODE_INPUT);
+    gpio_set_pull_mode((gpio_num_t)BTN_DOWN_PIN, GPIO_PULLUP_ONLY);
+
     // Zanshin: Načítame a aplikujeme uloženú rotáciu EŠTE PRED bootovacou
     // obrazovkou. Predvolená "rovná" orientácia displeja vyžaduje (true, true).
     bool s_display_rotated = app_config_get()->display_rotated;
@@ -417,6 +446,14 @@ extern "C" void gui_task(void* arg) {
     bool btn_last_state = true;
     uint32_t btn_press_time = 0;
     bool btn_long_pressed = false;
+    bool ok_last_state = true;
+    bool esc_last_state = true;
+    bool up_last_state = true;
+    bool down_last_state = true;
+    uint32_t ok_press_time = 0;
+    uint32_t esc_press_time = 0;
+    uint32_t up_press_time = 0;
+    uint32_t down_press_time = 0;
 
     bool is_in_options = false;
     int selected_option_idx = 0;
@@ -439,6 +476,82 @@ extern "C" void gui_task(void* arg) {
     int cache_aqi = -999;
     float cache_pm25 = -999;
     int cache_weather_sensor_ok = -1;
+    uint32_t last_brightness_update_ms = 0;
+    float filtered_lux = -1.0f;
+
+    auto get_option_count = [&](int screen) {
+        if (screen == 3) return 6;
+        if (screen == 4) return 3;
+        return 1;
+    };
+
+    auto close_options_menu = [&]() {
+        is_in_options = false;
+        force_redraw = true;
+        display_clear(THEME_BG);
+    };
+
+    auto open_options_menu = [&]() {
+        if (current_screen == 3 || current_screen == 4) {
+            is_in_options = true;
+            selected_option_idx = 0;
+            force_redraw = true;
+            display_clear(THEME_BG);
+        }
+    };
+
+    auto apply_selected_option = [&]() {
+        if (current_screen == 3) {
+            if (selected_option_idx == 0)
+                graph_range_days = 1;
+            else if (selected_option_idx == 1)
+                graph_range_days = 3;
+            else if (selected_option_idx == 2)
+                graph_range_days = 7;
+            else if (selected_option_idx == 3)
+                graph_flip_interval_ms = 15000;
+            else if (selected_option_idx == 4)
+                graph_flip_interval_ms = 30000;
+            // idx 5 je Back (nic nerobime)
+        } else if (current_screen == 4) {
+            if (selected_option_idx == 0) {
+                s_display_rotated = !s_display_rotated;
+                esp_lcd_panel_mirror(panel_handle, !s_display_rotated,
+                                     !s_display_rotated);
+                app_config_get()->display_rotated = s_display_rotated;
+                app_config_save();
+            } else if (selected_option_idx == 1) {
+                app_config_get()->auto_brightness =
+                    !app_config_get()->auto_brightness;
+                app_config_save();
+            }
+            // idx 2 je Back (nic nerobime)
+        }
+    };
+
+    auto next_screen = [&]() {
+        current_screen = (current_screen + 1) % 5;
+        force_redraw = true;
+        display_clear(THEME_BG);
+    };
+
+    auto prev_screen = [&]() {
+        current_screen = (current_screen + 4) % 5;
+        force_redraw = true;
+        display_clear(THEME_BG);
+    };
+
+    auto next_option = [&]() {
+        int opt_count = get_option_count(current_screen);
+        selected_option_idx = (selected_option_idx + 1) % opt_count;
+        force_redraw = true;
+    };
+
+    auto prev_option = [&]() {
+        int opt_count = get_option_count(current_screen);
+        selected_option_idx = (selected_option_idx + opt_count - 1) % opt_count;
+        force_redraw = true;
+    };
 
     while (1) {
         uint32_t now_ms = esp_timer_get_time() / 1000;
@@ -456,43 +569,12 @@ extern "C" void gui_task(void* arg) {
             (now_ms - btn_press_time > 800)) {
             btn_long_pressed = true;
             if (is_in_options) {
-                // Potvrdenie voľby
-                if (current_screen == 3) {
-                    if (selected_option_idx == 0)
-                        graph_range_days = 1;
-                    else if (selected_option_idx == 1)
-                        graph_range_days = 3;
-                    else if (selected_option_idx == 2)
-                        graph_range_days = 7;
-                    else if (selected_option_idx == 3)
-                        graph_flip_interval_ms = 15000;
-                    else if (selected_option_idx == 4)
-                        graph_flip_interval_ms = 30000;
-                    // idx 5 je Back (nič nerobíme)
-                } else if (current_screen == 4) {
-                    if (selected_option_idx == 0) {
-                        s_display_rotated = !s_display_rotated;
-                        // Zanshin: HW rotácia o 180° = zrkadlenie v oboch
-                        // osiach súčasne
-                        esp_lcd_panel_mirror(panel_handle, !s_display_rotated,
-                                             !s_display_rotated);
-                        app_config_get()->display_rotated = s_display_rotated;
-                        app_config_save();
-                    }
-                    // idx 1 je Back (nič nerobíme)
-                }
-                is_in_options = false;
-                force_redraw = true;
-                display_clear(THEME_BG);
+                apply_selected_option();
+                close_options_menu();
             } else {
-                // Zanshin: Zamedzenie uviaznutia. Menu otvoríme len tam, kde
-                // reálne sú nastavenia (Grafy a Systém)
-                if (current_screen == 3 || current_screen == 4) {
-                    is_in_options = true;
-                    selected_option_idx = 0;
-                    force_redraw = true;
-                    display_clear(THEME_BG);
-                }
+                // Zanshin: Zamedzenie uviaznutia. Menu otvorime len tam, kde
+                // realne su nastavenia (Grafy a System)
+                open_options_menu();
             }
         }
 
@@ -501,27 +583,84 @@ extern "C" void gui_task(void* arg) {
             if (!btn_long_pressed &&
                 (now_ms - btn_press_time > 50)) {  // 50ms debounce
                 if (is_in_options) {
-                    // Cyklovanie možností v menu
-                    int opt_count = 1;
-                    if (current_screen == 3)
-                        opt_count = 6;
-                    else if (current_screen == 4)
-                        opt_count = 2;
-
-                    selected_option_idx = (selected_option_idx + 1) % opt_count;
-                    force_redraw = true;
+                    // Cyklovanie moznosti v menu
+                    next_option();
                 } else {
-                    current_screen =
-                        (current_screen + 1) % 5;  // Rotácia obrazoviek
-                    force_redraw = true;
-                    display_clear(THEME_BG);  // Vymazanie pri prepnutí
+                    // Rotacia obrazoviek
+                    next_screen();
                 }
             }
         }
         btn_last_state = btn_state;
 
-        // Prekreslíme len ak bolo stlačené tlačidlo, alebo uplynuli 2 sekundy
-        if (force_redraw || (now_ms - last_draw_time) >= 2000) {
+        // Externe OK tlacidlo: mimo menu otvori options, v menu potvrdi.
+        bool ok_state = gpio_get_level((gpio_num_t)BTN_OK_PIN);
+        if (ok_state == 0 && ok_last_state == 1) {
+            ok_press_time = now_ms;
+        }
+        if (ok_state == 1 && ok_last_state == 0 &&
+            (now_ms - ok_press_time > 50)) {
+            if (is_in_options) {
+                apply_selected_option();
+                close_options_menu();
+            } else {
+                open_options_menu();
+            }
+        }
+        ok_last_state = ok_state;
+
+        // Externe ESC tlacidlo: v menu zrusi options bez potvrdenia.
+        bool esc_state = gpio_get_level((gpio_num_t)BTN_ESC_PIN);
+        if (esc_state == 0 && esc_last_state == 1) {
+            esc_press_time = now_ms;
+        }
+        if (esc_state == 1 && esc_last_state == 0 &&
+            (now_ms - esc_press_time > 50)) {
+            if (is_in_options) {
+                close_options_menu();
+            }
+        }
+        esc_last_state = esc_state;
+
+        // Externe UP tlacidlo: obrazovky dopredu, v options pohyb hore.
+        bool up_state = gpio_get_level((gpio_num_t)BTN_UP_PIN);
+        if (up_state == 0 && up_last_state == 1) {
+            up_press_time = now_ms;
+        }
+        if (up_state == 1 && up_last_state == 0 &&
+            (now_ms - up_press_time > 50)) {
+            if (is_in_options) {
+                prev_option();
+            } else {
+                next_screen();
+            }
+        }
+        up_last_state = up_state;
+
+        // Externe DOWN tlacidlo: obrazovky dozadu, v options pohyb dole.
+        bool down_state = gpio_get_level((gpio_num_t)BTN_DOWN_PIN);
+        if (down_state == 0 && down_last_state == 1) {
+            down_press_time = now_ms;
+        }
+        if (down_state == 1 && down_last_state == 0 &&
+            (now_ms - down_press_time > 50)) {
+            if (is_in_options) {
+                next_option();
+            } else {
+                prev_screen();
+            }
+        }
+        down_last_state = down_state;
+
+        // Settings potrebuje sviznejsi refresh pre live lux hodnotu.
+        uint32_t redraw_period_ms = 2000;
+        if (!is_in_options && current_screen == 4) {
+            redraw_period_ms = 1000;
+        }
+
+        // Prekreslíme len ak bolo stlačené tlačidlo, alebo uplynul refresh
+        // interval.
+        if (force_redraw || (now_ms - last_draw_time) >= redraw_period_ms) {
             if (force_redraw) {
                 cache_t = -999;
                 cache_h = -999;
@@ -589,7 +728,10 @@ extern "C" void gui_task(void* arg) {
                 const char* opt_graph[] = {"1 Den",       "3 Dni",
                                            "7 Dni",       "Rotacia 15s",
                                            "Rotacia 30s", "Back"};
-                const char* opt_sys[] = {"Otocit o 180", "Back"};
+                char opt_auto_bri[24];
+                snprintf(opt_auto_bri, sizeof(opt_auto_bri), "Auto jas: %s",
+                         app_config_get()->auto_brightness ? "ON" : "OFF");
+                const char* opt_sys[] = {"Otocit o 180", opt_auto_bri, "Back"};
                 const char* opt_default[] = {"Back"};
 
                 const char** options = opt_default;
@@ -600,7 +742,7 @@ extern "C" void gui_task(void* arg) {
                     count = 6;
                 } else if (current_screen == 4) {
                     options = opt_sys;
-                    count = 2;
+                    count = 3;
                 }
 
                 for (int i = 0; i < count; i++) {
@@ -771,6 +913,7 @@ extern "C" void gui_task(void* arg) {
                                         THEME_BG, 1);
                     }
                 }
+
                 // --- OBRAZOVKA 1: Počasie (OpenWeather API) ---
                 else if (current_screen == 1) {
                     float wt = 0;
@@ -877,8 +1020,41 @@ extern "C" void gui_task(void* arg) {
                         }
                     }
                 }
+
+                // Adaptivny jas displeja (smartfonovy styl, s plynulym
+                // filtrom). Bezi nezavisle od vybratej obrazovky.
+                if (app_config_get()->auto_brightness &&
+                    (now_ms - last_brightness_update_ms) >= 1000) {
+                    float t_cur = 0.0f, h_cur = 0.0f, p_cur = 0.0f,
+                          lux_cur = 0.0f;
+                    sensor_core_get_latest_full(&t_cur, &h_cur, &p_cur,
+                                                &lux_cur);
+
+                    if (lux_cur >= 0.0f) {
+                        if (filtered_lux < 0.0f) {
+                            filtered_lux = lux_cur;
+                        } else {
+                            filtered_lux =
+                                (filtered_lux * 0.80f) + (lux_cur * 0.20f);
+                        }
+                        uint8_t target =
+                            map_lux_to_backlight_percent(filtered_lux);
+                        uint8_t current = display_hal_get_backlight_percent();
+
+                        // Hysteresis + slew-rate limit to prevent visible
+                        // flicker when lux oscillates around a threshold.
+                        int delta = (int)target - (int)current;
+                        if (delta >= 2 || delta <= -2) {
+                            if (delta > 3) delta = 3;
+                            if (delta < -3) delta = -3;
+                            uint8_t next = (uint8_t)((int)current + delta);
+                            display_hal_set_backlight_percent(next);
+                        }
+                    }
+                    last_brightness_update_ms = now_ms;
+                }
                 // --- OBRAZOVKA 2: Ovzdušie a Tlak (Nová ATMOSPHERE) ---
-                else if (current_screen == 2) {
+                if (current_screen == 2) {
                     float wt = 0;
                     int wh = 0, wp = 0, wid = 0;
                     if (weather_get_latest(&wt, &wh, &wp, &wid)) {
@@ -970,6 +1146,35 @@ extern "C" void gui_task(void* arg) {
                 else if (current_screen == 4) {
                     app_config_t* cfg = app_config_get();
                     int sy = 30;
+
+                    // Pravy stlpec: svetelny senzor (1. riadok)
+                    float lt = 0.0f, lh = 0.0f, lp = 0.0f, lux = 0.0f;
+                    sensor_core_get_latest_full(&lt, &lh, &lp, &lux);
+
+                    int sx = 170;
+                    gui_draw_string(sx, 30, "INTENZITA SVETLA:", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+                    char light_buf[24];
+                    snprintf(light_buf, sizeof(light_buf), "%6.2f lx", lux);
+                    gui_draw_string(sx, 42, light_buf, SYS_VALUE_FG, THEME_BG,
+                                    1);
+
+                    uint8_t brightness = display_hal_get_backlight_percent();
+                    char bri_buf[16];
+                    snprintf(bri_buf, sizeof(bri_buf), "%3u %%", brightness);
+                    gui_draw_string(sx, 54, "JAS DISPLEJA:", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+                    gui_draw_string(sx, 66, bri_buf, SYS_VALUE_FG, THEME_BG, 1);
+
+                    gui_draw_string(sx, 78, "AUTO JAS:", SYS_LABEL_FG, THEME_BG,
+                                    1);
+                    gui_draw_string(sx + 64, 78,
+                                    cfg->auto_brightness ? "ON" : "OFF",
+                                    cfg->auto_brightness ? SYS_WIFI_OK_FG
+                                                         : COLOR_LIGHT_GRAY,
+                                    THEME_BG, 1);
+                    gui_draw_string(sx, 90, "Aktualizacia: ~1s",
+                                    COLOR_LIGHT_GRAY, THEME_BG, 1);
 
                     gui_draw_string(10, sy, "ZARIADENIE:", SYS_LABEL_FG,
                                     THEME_BG, 1);
@@ -1295,7 +1500,15 @@ extern "C" void gui_task(void* arg) {
                                     // stlačí tlačidlo, okamžite
                                     // prerušíme kreslenie grafu
                                     if (gpio_get_level(
-                                            (gpio_num_t)BOOT_BUTTON_PIN) == 0) {
+                                            (gpio_num_t)BOOT_BUTTON_PIN) == 0 ||
+                                        gpio_get_level(
+                                            (gpio_num_t)BTN_OK_PIN) == 0 ||
+                                        gpio_get_level(
+                                            (gpio_num_t)BTN_ESC_PIN) == 0 ||
+                                        gpio_get_level(
+                                            (gpio_num_t)BTN_UP_PIN) == 0 ||
+                                        gpio_get_level(
+                                            (gpio_num_t)BTN_DOWN_PIN) == 0) {
                                         break;
                                     }
                                 }

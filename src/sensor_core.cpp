@@ -19,8 +19,9 @@ static const char* TAG = "SENSOR_CORE";
 #define I2C_SCL_PIN GPIO_NUM_1
 #define I2C_FREQ_HZ 100000
 #define I2C_FALLBACK_FREQ_HZ 10000
-#define ENABLE_BH1750 0
+#define ENABLE_BH1750 1
 #define SENSOR_CORE_DEBUG_I2C 0
+#define SENSOR_MEASURE_INTERVAL_MS 1000
 
 #define BME280_ADDR_1 0x76
 #define BME280_ADDR_2 0x77
@@ -38,6 +39,8 @@ static const char* TAG = "SENSOR_CORE";
 #define BME280_REG_PRESS_MSB 0xF7
 
 #define BH1750_CMD_CONT_HI_RES 0x10
+#define BH1750_CMD_ONE_TIME_HI_RES 0x20
+#define BH1750_MEAS_TIME_MS 180
 
 static uint8_t s_bme_addr = 0;
 static uint8_t s_bh_addr = 0;
@@ -46,14 +49,26 @@ static gpio_num_t s_i2c_scl = I2C_SCL_PIN;
 static uint32_t s_i2c_freq_hz = I2C_FREQ_HZ;
 static bool s_i2c_driver_installed = false;
 static bool s_bme_use_bitbang = false;
+static bool s_i2c_use_bitbang_bus = false;
 static bool s_weather_sensor_ok = false;
+static uint32_t s_bh_invalid_samples = 0;
 
 #if SENSOR_CORE_DEBUG_I2C
 #define I2C_DBGI(...) ESP_LOGI(TAG, __VA_ARGS__)
 #define I2C_DBGW(...) ESP_LOGW(TAG, __VA_ARGS__)
 #else
-#define I2C_DBGI(...) ((void)0)
-#define I2C_DBGW(...) ((void)0)
+#define I2C_DBGI(...)                   \
+    do {                                \
+        if (0) {                        \
+            ESP_LOGI(TAG, __VA_ARGS__); \
+        }                               \
+    } while (0)
+#define I2C_DBGW(...)                   \
+    do {                                \
+        if (0) {                        \
+            ESP_LOGW(TAG, __VA_ARGS__); \
+        }                               \
+    } while (0)
 #endif
 
 static float s_last_t = 0.0f;
@@ -65,6 +80,9 @@ static int32_t s_t_fine = 0;
 
 static esp_err_t i2c_read_reg(uint8_t dev_addr, uint8_t reg, uint8_t* data,
                               size_t len);
+
+static esp_err_t i2c_read_device_bytes(uint8_t dev_addr, uint8_t* data,
+                                       size_t len);
 
 typedef struct {
     uint16_t dig_T1;
@@ -89,21 +107,14 @@ typedef struct {
 
 static bme280_calib_data_t s_calib = {};
 
-static uint32_t measure_rise_us(gpio_num_t pin) {
-    gpio_set_level(pin, 0);
-    esp_rom_delay_us(50);
-    gpio_set_level(pin, 1);  // open-drain release
-
-    const uint32_t max_wait_us = 500;
-    for (uint32_t us = 0; us < max_wait_us; ++us) {
-        if (gpio_get_level(pin) == 1) return us;
-        esp_rom_delay_us(1);
-    }
-    return max_wait_us;
-}
-
 static void diagnose_gpio_wiggle(gpio_num_t sda, gpio_num_t scl,
                                  const char* label) {
+#if !SENSOR_CORE_DEBUG_I2C
+    (void)sda;
+    (void)scl;
+    (void)label;
+    return;
+#else
     gpio_reset_pin(sda);
     gpio_reset_pin(scl);
     gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
@@ -139,12 +150,29 @@ static void diagnose_gpio_wiggle(gpio_num_t sda, gpio_num_t scl,
     int ll_sda = gpio_get_level(sda);
     int ll_scl = gpio_get_level(scl);
 
+    int debug_sink =
+        hh_sda + hh_scl + lh_sda + lh_scl + hl_sda + hl_scl + ll_sda + ll_scl;
+    (void)debug_sink;
+
+    auto measure_rise_us_local = [&](gpio_num_t pin) {
+        gpio_set_level(pin, 0);
+        esp_rom_delay_us(50);
+        gpio_set_level(pin, 1);  // open-drain release
+
+        const uint32_t max_wait_us = 500;
+        for (uint32_t us = 0; us < max_wait_us; ++us) {
+            if (gpio_get_level(pin) == 1) return us;
+            esp_rom_delay_us(1);
+        }
+        return max_wait_us;
+    };
+
     // Vratenie do uvolneneho stavu.
     gpio_set_level(sda, 1);
     gpio_set_level(scl, 1);
 
-    uint32_t rise_sda_us = measure_rise_us(sda);
-    uint32_t rise_scl_us = measure_rise_us(scl);
+    uint32_t rise_sda_us = measure_rise_us_local(sda);
+    uint32_t rise_scl_us = measure_rise_us_local(scl);
 
     gpio_set_direction(sda, GPIO_MODE_INPUT);
     gpio_set_direction(scl, GPIO_MODE_INPUT);
@@ -164,6 +192,7 @@ static void diagnose_gpio_wiggle(gpio_num_t sda, gpio_num_t scl,
             "externy 4.7k)",
             label);
     }
+#endif
 }
 
 static void diagnose_line_levels(gpio_num_t sda, gpio_num_t scl,
@@ -307,12 +336,7 @@ static void sensor_boot_selftest() {
 
 static esp_err_t i2c_write_bytes(uint8_t dev_addr, const uint8_t* data,
                                  size_t len) {
-    return i2c_master_write_to_device(I2C_PORT, dev_addr, data, len,
-                                      pdMS_TO_TICKS(100));
-}
-
-static esp_err_t i2c_write_reg_u8(uint8_t dev_addr, uint8_t reg, uint8_t val) {
-    if (s_bme_use_bitbang && dev_addr == s_bme_addr) {
+    if (s_i2c_use_bitbang_bus) {
         auto bb_delay = []() { esp_rom_delay_us(3); };
         auto set_sda = [&](int lvl) {
             gpio_set_level(s_i2c_sda, lvl ? 1 : 0);
@@ -335,19 +359,21 @@ static esp_err_t i2c_write_reg_u8(uint8_t dev_addr, uint8_t reg, uint8_t val) {
             return ack;
         };
 
+        if (!data || len == 0) return ESP_ERR_INVALID_ARG;
+
         gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT_OUTPUT_OD);
         gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT_OUTPUT_OD);
 
-        // START
         set_sda(1);
         set_scl(1);
         set_sda(0);
         set_scl(0);
 
-        bool ok = write_byte((uint8_t)((dev_addr << 1) | 0x00)) &&
-                  write_byte(reg) && write_byte(val);
+        bool ok = write_byte((uint8_t)((dev_addr << 1) | 0x00));
+        for (size_t i = 0; i < len && ok; ++i) {
+            ok = write_byte(data[i]);
+        }
 
-        // STOP
         set_sda(0);
         set_scl(1);
         set_sda(1);
@@ -356,13 +382,18 @@ static esp_err_t i2c_write_reg_u8(uint8_t dev_addr, uint8_t reg, uint8_t val) {
         return ok ? ESP_OK : ESP_FAIL;
     }
 
+    return i2c_master_write_to_device(I2C_PORT, dev_addr, data, len,
+                                      pdMS_TO_TICKS(100));
+}
+
+static esp_err_t i2c_write_reg_u8(uint8_t dev_addr, uint8_t reg, uint8_t val) {
     uint8_t payload[2] = {reg, val};
     return i2c_write_bytes(dev_addr, payload, sizeof(payload));
 }
 
 static esp_err_t i2c_read_reg(uint8_t dev_addr, uint8_t reg, uint8_t* data,
                               size_t len) {
-    if (s_bme_use_bitbang && dev_addr == s_bme_addr) {
+    if (s_i2c_use_bitbang_bus) {
         auto bb_delay = []() { esp_rom_delay_us(3); };
         auto set_sda = [&](int lvl) {
             gpio_set_level(s_i2c_sda, lvl ? 1 : 0);
@@ -441,6 +472,74 @@ static esp_err_t i2c_read_reg(uint8_t dev_addr, uint8_t reg, uint8_t* data,
 
     return i2c_master_write_read_device(I2C_PORT, dev_addr, &reg, 1, data, len,
                                         pdMS_TO_TICKS(100));
+}
+
+static esp_err_t i2c_read_device_bytes(uint8_t dev_addr, uint8_t* data,
+                                       size_t len) {
+    if (s_i2c_use_bitbang_bus) {
+        auto bb_delay = []() { esp_rom_delay_us(3); };
+        auto set_sda = [&](int lvl) {
+            gpio_set_level(s_i2c_sda, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto set_scl = [&](int lvl) {
+            gpio_set_level(s_i2c_scl, lvl ? 1 : 0);
+            bb_delay();
+        };
+        auto write_byte = [&](uint8_t b) {
+            for (int i = 7; i >= 0; --i) {
+                set_sda((b >> i) & 0x01);
+                set_scl(1);
+                set_scl(0);
+            }
+            set_sda(1);
+            set_scl(1);
+            bool ack = (gpio_get_level(s_i2c_sda) == 0);
+            set_scl(0);
+            return ack;
+        };
+        auto read_byte = [&](bool master_ack) {
+            uint8_t b = 0;
+            set_sda(1);
+            for (int i = 7; i >= 0; --i) {
+                set_scl(1);
+                if (gpio_get_level(s_i2c_sda)) b |= (uint8_t)(1U << i);
+                set_scl(0);
+            }
+            set_sda(master_ack ? 0 : 1);
+            set_scl(1);
+            set_scl(0);
+            set_sda(1);
+            return b;
+        };
+
+        if (!data || len == 0) return ESP_ERR_INVALID_ARG;
+
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT_OUTPUT_OD);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT_OUTPUT_OD);
+
+        set_sda(1);
+        set_scl(1);
+        set_sda(0);
+        set_scl(0);
+
+        bool ok = write_byte((uint8_t)((dev_addr << 1) | 0x01));
+        if (ok) {
+            for (size_t i = 0; i < len; ++i) {
+                data[i] = read_byte((i + 1) < len);
+            }
+        }
+
+        set_sda(0);
+        set_scl(1);
+        set_sda(1);
+        gpio_set_direction(s_i2c_sda, GPIO_MODE_INPUT);
+        gpio_set_direction(s_i2c_scl, GPIO_MODE_INPUT);
+        return ok ? ESP_OK : ESP_FAIL;
+    }
+
+    return i2c_master_read_from_device(I2C_PORT, dev_addr, data, len,
+                                       pdMS_TO_TICKS(100));
 }
 
 static bool probe_device_ex_timeout(uint8_t addr, esp_err_t* out_err,
@@ -634,6 +733,7 @@ static void detect_sensors_on_current_bus() {
     s_bme_addr = 0;
     s_bh_addr = 0;
     s_bme_use_bitbang = false;
+    s_i2c_use_bitbang_bus = false;
 
     esp_err_t err_bme1 = ESP_FAIL;
     esp_err_t err_bme2 = ESP_FAIL;
@@ -645,14 +745,30 @@ static void detect_sensors_on_current_bus() {
     esp_err_t err_bh2 = ESP_FAIL;
 #endif
 
-    if (probe_device_ex(BME280_ADDR_1, &err_bme1)) {
+    if (s_i2c_use_bitbang_bus) {
+        if (bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BME280_ADDR_1)) {
+            s_bme_addr = BME280_ADDR_1;
+            err_bme1 = ESP_OK;
+        } else if (bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BME280_ADDR_2)) {
+            s_bme_addr = BME280_ADDR_2;
+            err_bme2 = ESP_OK;
+        }
+    } else if (probe_device_ex(BME280_ADDR_1, &err_bme1)) {
         s_bme_addr = BME280_ADDR_1;
     } else if (probe_device_ex(BME280_ADDR_2, &err_bme2)) {
         s_bme_addr = BME280_ADDR_2;
     }
 
 #if ENABLE_BH1750
-    if (probe_device_ex(BH1750_ADDR_1, &err_bh1)) {
+    if (s_i2c_use_bitbang_bus) {
+        if (bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BH1750_ADDR_1)) {
+            s_bh_addr = BH1750_ADDR_1;
+            err_bh1 = ESP_OK;
+        } else if (bitbang_probe_addr(s_i2c_sda, s_i2c_scl, BH1750_ADDR_2)) {
+            s_bh_addr = BH1750_ADDR_2;
+            err_bh2 = ESP_OK;
+        }
+    } else if (probe_device_ex(BH1750_ADDR_1, &err_bh1)) {
         s_bh_addr = BH1750_ADDR_1;
     } else if (probe_device_ex(BH1750_ADDR_2, &err_bh2)) {
         s_bh_addr = BH1750_ADDR_2;
@@ -807,20 +923,58 @@ bool sensor_core_read_bh1750(float* lux) {
     if (s_bh_addr == 0) return false;
 
     uint8_t raw[2] = {0};
-    if (i2c_master_read_from_device(I2C_PORT, s_bh_addr, raw, sizeof(raw),
-                                    pdMS_TO_TICKS(100)) != ESP_OK) {
+    if (i2c_read_device_bytes(s_bh_addr, raw, sizeof(raw)) != ESP_OK) {
         return false;
     }
 
     uint16_t level = ((uint16_t)raw[0] << 8) | raw[1];
+    if (level == 0xFFFF) {
+        // Bus-high read pattern; treat as invalid sample.
+        s_bh_invalid_samples++;
+        if ((s_bh_invalid_samples % 10U) == 1U) {
+            ESP_LOGW(TAG, "BH1750 invalid raw=0xFFFF (sample #%lu), ignoring",
+                     (unsigned long)s_bh_invalid_samples);
+        }
+        return false;
+    }
+
+    s_bh_invalid_samples = 0;
+
     *lux = (float)level / 1.2f;
     if (*lux < 0.0f || *lux > 200000.0f) return false;
     return true;
 #endif
 }
 
+static bool sensor_core_read_bh1750_with_recovery(float* lux) {
+#if !ENABLE_BH1750
+    (void)lux;
+    return false;
+#else
+    if (s_bh_addr == 0) {
+        return false;
+    }
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        // Force fresh measurement each cycle to avoid stale values.
+        uint8_t cmd = BH1750_CMD_ONE_TIME_HI_RES;
+        if (i2c_write_bytes(s_bh_addr, &cmd, 1) != ESP_OK) {
+            continue;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(BH1750_MEAS_TIME_MS));
+        if (sensor_core_read_bh1750(lux)) {
+            return true;
+        }
+    }
+
+    return false;
+#endif
+}
+
 void sensor_core_init() {
     s_bme_use_bitbang = false;
+    s_i2c_use_bitbang_bus = false;
     s_weather_sensor_ok = false;
 
     ESP_LOGI(TAG,
@@ -860,6 +1014,7 @@ void sensor_core_init() {
 
                 s_bme_addr = bb_bme_addr;
                 s_bme_use_bitbang = true;
+                s_i2c_use_bitbang_bus = true;
 
                 uint8_t bb_chip_id = 0;
                 if (i2c_read_reg(s_bme_addr, BME280_REG_ID, &bb_chip_id, 1) ==
@@ -882,6 +1037,7 @@ void sensor_core_init() {
                              bb_chip_id);
                     s_bme_addr = 0;
                     s_bme_use_bitbang = false;
+                    s_i2c_use_bitbang_bus = false;
                 }
             }
         }
@@ -919,7 +1075,7 @@ void sensor_core_init() {
         uint8_t cmd = BH1750_CMD_CONT_HI_RES;
         if (i2c_write_bytes(s_bh_addr, &cmd, 1) == ESP_OK) {
             ESP_LOGI(TAG, "BH1750 detegovany na adrese 0x%02X", s_bh_addr);
-            vTaskDelay(pdMS_TO_TICKS(180));
+            vTaskDelay(pdMS_TO_TICKS(BH1750_MEAS_TIME_MS));
         } else {
             ESP_LOGE(TAG, "BH1750 init zlyhal");
             s_bh_addr = 0;
@@ -936,7 +1092,8 @@ void sensor_core_init() {
 }
 
 static void sensor_task(void* arg) {
-    ESP_LOGI(TAG, "Sensor Task spusteny (zive meranie: 5s, logovanie: 10m)");
+    ESP_LOGI(TAG, "Sensor Task spusteny (zive meranie: %lums, logovanie: 10m)",
+             (unsigned long)SENSOR_MEASURE_INTERVAL_MS);
     int last_log_min = -1;
     bool sync_warned = false;
 
@@ -950,7 +1107,7 @@ static void sensor_task(void* arg) {
             s_last_p = p;
         }
 
-        if (sensor_core_read_bh1750(&lux)) {
+        if (sensor_core_read_bh1750_with_recovery(&lux)) {
             s_last_lux = lux;
         }
 
@@ -976,7 +1133,7 @@ static void sensor_task(void* arg) {
             sync_warned = true;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(SENSOR_MEASURE_INTERVAL_MS));
     }
 }
 

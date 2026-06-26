@@ -13,6 +13,8 @@
 static const char* TAG = "DISP_HAL";
 
 esp_lcd_panel_handle_t panel_handle = NULL;
+static bool s_backlight_ready = false;
+static uint8_t s_backlight_percent = 31;
 
 // --- OPRAVENÉ PINY (Z originálneho Waveshare dema) ---
 #define WS_MOSI 6
@@ -22,6 +24,11 @@ esp_lcd_panel_handle_t panel_handle = NULL;
 #define WS_RST 21
 #define WS_BCKL 22
 #define LCD_DRAW_BUFF_LINES 20
+
+static uint32_t percent_to_duty(uint8_t percent) {
+    if (percent > 100) percent = 100;
+    return ((uint32_t)percent * 255U) / 100U;
+}
 
 esp_err_t display_hal_init(void) {
     ESP_LOGI(TAG, "Inicializácia SPI zbernice");
@@ -137,6 +144,8 @@ esp_err_t display_hal_init(void) {
                              // kompromis medzi jasom a presvitaním.
     ledc_channel.hpoint = 0;
     ledc_channel_config(&ledc_channel);
+    s_backlight_ready = true;
+    s_backlight_percent = 31;
 
     // Zapnutie displeja (exit z režimu spánku)
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
@@ -144,6 +153,19 @@ esp_err_t display_hal_init(void) {
     ESP_LOGI(TAG, "LCD HAL inicializovaný úspešne.");
     return ESP_OK;
 }
+
+void display_hal_set_backlight_percent(uint8_t percent) {
+    if (!s_backlight_ready) return;
+    if (percent > 100) percent = 100;
+    if (percent == s_backlight_percent) return;
+
+    uint32_t duty = percent_to_duty(percent);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    s_backlight_percent = percent;
+}
+
+uint8_t display_hal_get_backlight_percent(void) { return s_backlight_percent; }
 
 // Zanshin: Globálna funkcia na vymazanie/výplň obrazovky (vyžadovaná pre
 // gui_task)

@@ -17,7 +17,8 @@ static app_config_t s_config = {
     .weather_api_key = "bf45f6a7032650a46b26e01d879cb436",
     .dht_temp_offset = 0.0f,
     .bmp_temp_offset = 0.0f,
-    .display_rotated = false};
+    .display_rotated = false,
+    .auto_brightness = false};
 
 app_config_t* app_config_get(void) { return &s_config; }
 
@@ -92,6 +93,10 @@ void app_config_init(void) {
         if (cJSON_IsBool(disp_rot))
             s_config.display_rotated = cJSON_IsTrue(disp_rot);
 
+        cJSON* auto_bri = cJSON_GetObjectItem(json, "auto_bri");
+        if (cJSON_IsBool(auto_bri))
+            s_config.auto_brightness = cJSON_IsTrue(auto_bri);
+
         cJSON_Delete(json);
 
         // Zanshin: Auto-migrácia, ak bol na disku starý config s nulovými
@@ -124,6 +129,7 @@ void app_config_save(void) {
     cJSON_AddNumberToObject(json, "dht_off", s_config.dht_temp_offset);
     cJSON_AddNumberToObject(json, "bmp_off", s_config.bmp_temp_offset);
     cJSON_AddBoolToObject(json, "disp_rot", s_config.display_rotated);
+    cJSON_AddBoolToObject(json, "auto_bri", s_config.auto_brightness);
 
     // Bezpečné uloženie bez zbytočného formátovania (šetríme miesto v LittleFS)
     char* json_str = cJSON_PrintUnformatted(json);
