@@ -27,6 +27,18 @@ static const char* TAG = "GUI";
 #define BTN_ESC_PIN 3
 #define BTN_UP_PIN 4
 #define BTN_DOWN_PIN 5
+#define GUI_BUTTON_DEBUG 1
+
+#if GUI_BUTTON_DEBUG
+#define BTN_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
+#else
+#define BTN_LOGI(...)                   \
+    do {                                \
+        if (0) {                        \
+            ESP_LOGI(TAG, __VA_ARGS__); \
+        }                               \
+    } while (0)
+#endif
 extern esp_lcd_panel_handle_t panel_handle;
 extern "C" void display_clear(uint16_t color);
 
@@ -410,6 +422,13 @@ extern "C" void gui_task(void* arg) {
     gpio_set_direction((gpio_num_t)BTN_DOWN_PIN, GPIO_MODE_INPUT);
     gpio_set_pull_mode((gpio_num_t)BTN_DOWN_PIN, GPIO_PULLUP_ONLY);
 
+    BTN_LOGI("BTN RAW startup: BOOT=%d OK=%d ESC=%d UP=%d DOWN=%d",
+             gpio_get_level((gpio_num_t)BOOT_BUTTON_PIN),
+             gpio_get_level((gpio_num_t)BTN_OK_PIN),
+             gpio_get_level((gpio_num_t)BTN_ESC_PIN),
+             gpio_get_level((gpio_num_t)BTN_UP_PIN),
+             gpio_get_level((gpio_num_t)BTN_DOWN_PIN));
+
     // Zanshin: Načítame a aplikujeme uloženú rotáciu EŠTE PRED bootovacou
     // obrazovkou. Predvolená "rovná" orientácia displeja vyžaduje (true, true).
     bool s_display_rotated = app_config_get()->display_rotated;
@@ -454,6 +473,10 @@ extern "C" void gui_task(void* arg) {
     uint32_t esc_press_time = 0;
     uint32_t up_press_time = 0;
     uint32_t down_press_time = 0;
+    uint32_t ok_last_event_ms = 0;
+    uint32_t esc_last_event_ms = 0;
+    uint32_t up_last_event_ms = 0;
+    uint32_t down_last_event_ms = 0;
 
     bool is_in_options = false;
     int selected_option_idx = 0;
@@ -478,6 +501,12 @@ extern "C" void gui_task(void* arg) {
     int cache_weather_sensor_ok = -1;
     uint32_t last_brightness_update_ms = 0;
     float filtered_lux = -1.0f;
+    uint32_t last_btn_diag_ms = 0;
+    int last_raw_boot = -1;
+    int last_raw_ok = -1;
+    int last_raw_esc = -1;
+    int last_raw_up = -1;
+    int last_raw_down = -1;
 
     auto get_option_count = [&](int screen) {
         if (screen == 3) return 6;
@@ -556,18 +585,49 @@ extern "C" void gui_task(void* arg) {
     while (1) {
         uint32_t now_ms = esp_timer_get_time() / 1000;
 
+        int raw_boot = gpio_get_level((gpio_num_t)BOOT_BUTTON_PIN);
+        int raw_ok = gpio_get_level((gpio_num_t)BTN_OK_PIN);
+        int raw_esc = gpio_get_level((gpio_num_t)BTN_ESC_PIN);
+        int raw_up = gpio_get_level((gpio_num_t)BTN_UP_PIN);
+        int raw_down = gpio_get_level((gpio_num_t)BTN_DOWN_PIN);
+
+        if (raw_boot != last_raw_boot || raw_ok != last_raw_ok ||
+            raw_esc != last_raw_esc || raw_up != last_raw_up ||
+            raw_down != last_raw_down) {
+            BTN_LOGI("BTN RAW CHG: BOOT=%d OK=%d ESC=%d UP=%d DOWN=%d",
+                     raw_boot, raw_ok, raw_esc, raw_up, raw_down);
+            last_raw_boot = raw_boot;
+            last_raw_ok = raw_ok;
+            last_raw_esc = raw_esc;
+            last_raw_up = raw_up;
+            last_raw_down = raw_down;
+        }
+
+        if ((now_ms - last_btn_diag_ms) >= 2000) {
+            BTN_LOGI("BTN RAW: BOOT=%d OK=%d ESC=%d UP=%d DOWN=%d",
+                     gpio_get_level((gpio_num_t)BOOT_BUTTON_PIN),
+                     gpio_get_level((gpio_num_t)BTN_OK_PIN),
+                     gpio_get_level((gpio_num_t)BTN_ESC_PIN),
+                     gpio_get_level((gpio_num_t)BTN_UP_PIN),
+                     gpio_get_level((gpio_num_t)BTN_DOWN_PIN));
+            last_btn_diag_ms = now_ms;
+        }
+
         // Čítanie tlačidla s detekciou krátkeho a dlhého stlačenia
-        bool btn_state = gpio_get_level((gpio_num_t)BOOT_BUTTON_PIN);
+        bool btn_state = (bool)raw_boot;
         if (btn_state == 0 &&
             btn_last_state == 1) {  // Detekcia stlačenia (hrana nadol)
             btn_press_time = now_ms;
             btn_long_pressed = false;
+            BTN_LOGI("BTN BOOT DOWN");
         }
 
         // Dlhé stlačenie (800ms)
         if (btn_state == 0 && !btn_long_pressed &&
             (now_ms - btn_press_time > 800)) {
             btn_long_pressed = true;
+            BTN_LOGI("BTN BOOT LONG (%ums)",
+                     (unsigned)(now_ms - btn_press_time));
             if (is_in_options) {
                 apply_selected_option();
                 close_options_menu();
@@ -582,6 +642,8 @@ extern "C" void gui_task(void* arg) {
         if (btn_state == 1 && btn_last_state == 0) {
             if (!btn_long_pressed &&
                 (now_ms - btn_press_time > 50)) {  // 50ms debounce
+                BTN_LOGI("BTN BOOT CLICK (%ums)",
+                         (unsigned)(now_ms - btn_press_time));
                 if (is_in_options) {
                     // Cyklovanie moznosti v menu
                     next_option();
@@ -594,61 +656,84 @@ extern "C" void gui_task(void* arg) {
         btn_last_state = btn_state;
 
         // Externe OK tlacidlo: mimo menu otvori options, v menu potvrdi.
-        bool ok_state = gpio_get_level((gpio_num_t)BTN_OK_PIN);
+        bool ok_state = (bool)raw_ok;
         if (ok_state == 0 && ok_last_state == 1) {
             ok_press_time = now_ms;
-        }
-        if (ok_state == 1 && ok_last_state == 0 &&
-            (now_ms - ok_press_time > 50)) {
-            if (is_in_options) {
-                apply_selected_option();
-                close_options_menu();
-            } else {
-                open_options_menu();
+            BTN_LOGI("BTN OK DOWN");
+            if ((now_ms - ok_last_event_ms) > 80) {
+                if (is_in_options) {
+                    BTN_LOGI("BTN OK ACTION: confirm option");
+                    apply_selected_option();
+                    close_options_menu();
+                } else {
+                    BTN_LOGI("BTN OK ACTION: open options");
+                    open_options_menu();
+                }
+                ok_last_event_ms = now_ms;
             }
+        }
+        if (ok_state == 1 && ok_last_state == 0) {
+            BTN_LOGI("BTN OK UP");
         }
         ok_last_state = ok_state;
 
         // Externe ESC tlacidlo: v menu zrusi options bez potvrdenia.
-        bool esc_state = gpio_get_level((gpio_num_t)BTN_ESC_PIN);
+        bool esc_state = (bool)raw_esc;
         if (esc_state == 0 && esc_last_state == 1) {
             esc_press_time = now_ms;
-        }
-        if (esc_state == 1 && esc_last_state == 0 &&
-            (now_ms - esc_press_time > 50)) {
-            if (is_in_options) {
-                close_options_menu();
+            BTN_LOGI("BTN ESC DOWN");
+            if ((now_ms - esc_last_event_ms) > 80) {
+                if (is_in_options) {
+                    BTN_LOGI("BTN ESC ACTION: cancel options");
+                    close_options_menu();
+                }
+                esc_last_event_ms = now_ms;
             }
+        }
+        if (esc_state == 1 && esc_last_state == 0) {
+            BTN_LOGI("BTN ESC UP");
         }
         esc_last_state = esc_state;
 
         // Externe UP tlacidlo: obrazovky dopredu, v options pohyb hore.
-        bool up_state = gpio_get_level((gpio_num_t)BTN_UP_PIN);
+        bool up_state = (bool)raw_up;
         if (up_state == 0 && up_last_state == 1) {
             up_press_time = now_ms;
-        }
-        if (up_state == 1 && up_last_state == 0 &&
-            (now_ms - up_press_time > 50)) {
-            if (is_in_options) {
-                prev_option();
-            } else {
-                next_screen();
+            BTN_LOGI("BTN UP DOWN");
+            if ((now_ms - up_last_event_ms) > 80) {
+                if (is_in_options) {
+                    BTN_LOGI("BTN UP ACTION: prev option");
+                    prev_option();
+                } else {
+                    BTN_LOGI("BTN UP ACTION: prev screen");
+                    prev_screen();
+                }
+                up_last_event_ms = now_ms;
             }
+        }
+        if (up_state == 1 && up_last_state == 0) {
+            BTN_LOGI("BTN UP UP");
         }
         up_last_state = up_state;
 
         // Externe DOWN tlacidlo: obrazovky dozadu, v options pohyb dole.
-        bool down_state = gpio_get_level((gpio_num_t)BTN_DOWN_PIN);
+        bool down_state = (bool)raw_down;
         if (down_state == 0 && down_last_state == 1) {
             down_press_time = now_ms;
-        }
-        if (down_state == 1 && down_last_state == 0 &&
-            (now_ms - down_press_time > 50)) {
-            if (is_in_options) {
-                next_option();
-            } else {
-                prev_screen();
+            BTN_LOGI("BTN DOWN DOWN");
+            if ((now_ms - down_last_event_ms) > 80) {
+                if (is_in_options) {
+                    BTN_LOGI("BTN DOWN ACTION: next option");
+                    next_option();
+                } else {
+                    BTN_LOGI("BTN DOWN ACTION: next screen");
+                    next_screen();
+                }
+                down_last_event_ms = now_ms;
             }
+        }
+        if (down_state == 1 && down_last_state == 0) {
+            BTN_LOGI("BTN DOWN UP");
         }
         down_last_state = down_state;
 
