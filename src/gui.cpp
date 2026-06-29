@@ -146,7 +146,7 @@ extern "C" void gui_task(void* arg) {
     // obrazovkou. Predvolená "rovná" orientácia displeja vyžaduje (true, true).
     s.s_display_rotated = app_config_get()->display_rotated;
     esp_lcd_panel_mirror(panel_handle, !s.s_display_rotated,
-                        !s.s_display_rotated);
+                         !s.s_display_rotated);
 
     // --- 1. BOOT SEQUENCE (Tvoj vysnívaný start-up log) ---
     display_clear(THEME_BG);
@@ -232,10 +232,26 @@ extern "C" void gui_task(void* arg) {
         uint32_t now_ms = esp_timer_get_time() / 1000;
 
         int raw_boot = gpio_get_level((gpio_num_t)BOOT_BUTTON_PIN);
-        int raw_ok = gpio_get_level((gpio_num_t)BTN_OK_PIN);
-        int raw_esc = gpio_get_level((gpio_num_t)BTN_ESC_PIN);
-        int raw_up = gpio_get_level((gpio_num_t)BTN_UP_PIN);
-        int raw_down = gpio_get_level((gpio_num_t)BTN_DOWN_PIN);
+        int phys_ok = gpio_get_level((gpio_num_t)BTN_OK_PIN);
+        int phys_esc = gpio_get_level((gpio_num_t)BTN_ESC_PIN);
+        int phys_up = gpio_get_level((gpio_num_t)BTN_UP_PIN);
+        int phys_down = gpio_get_level((gpio_num_t)BTN_DOWN_PIN);
+
+        // Zanshin: Pri otočení displeja o 180° sa otáčajú aj fyzické
+        // tlačidlá - logická funkcia sa musí prehodiť, aby UP/DOWN/OK/ESC
+        // sedeli s tým, čo je teraz "nahor"/"nadol" na obrazovke.
+        int raw_ok, raw_esc, raw_up, raw_down;
+        if (!s.s_display_rotated) {
+            raw_ok = phys_down;
+            raw_esc = phys_up;
+            raw_up = phys_ok;
+            raw_down = phys_esc;
+        } else {
+            raw_ok = phys_ok;
+            raw_esc = phys_esc;
+            raw_up = phys_up;
+            raw_down = phys_down;
+        }
 
         if (raw_boot != last_raw_boot || raw_ok != last_raw_ok ||
             raw_esc != last_raw_esc || raw_up != last_raw_up ||
@@ -391,8 +407,7 @@ extern "C" void gui_task(void* arg) {
 
         // Prekreslíme len ak bolo stlačené tlačidlo, alebo uplynul refresh
         // interval.
-        if (s.force_redraw ||
-            (now_ms - s.last_draw_time) >= redraw_period_ms) {
+        if (s.force_redraw || (now_ms - s.last_draw_time) >= redraw_period_ms) {
             if (s.force_redraw) {
                 s.cache_t = -999;
                 s.cache_h = -999;
@@ -602,7 +617,7 @@ extern "C" void gui_task(void* arg) {
             }
         } else {
             s.last_dot_x = -1;  // Reset stavu, ak nie sme na grafe (aby
-                              // sa neskôr vykreslil správne)
+                                // sa neskôr vykreslil správne)
             s.last_anim_sec = 999;
         }
 
