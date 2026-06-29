@@ -58,3 +58,35 @@ Fáza: ESP32 Firmware Uzavretý (RCP v2.3) -> Prechod na Android Core
 4. Aktuálny cieľ (Android Core):
 - Implementácia `DataStreamHandler` v Kotline pre spracovanie 20-bajtových chunkov z `A104` do Room DB.
 [/UPDATE-REDPINS-STATE]
+
+[UPDATE-REDPINS-STATE]
+Dátum: 2026-06-28 (Claude Code session)
+Fáza: ESP32 Firmware (Sense) - HMI bugfix
+
+1. GUI Bugfix (gui.cpp, obrazovka SENSORS):
+- Opravené prekrytie textu v spodnom (treťom) bloku obrazovky "SENSORS". Riadok stavu senzora počasia (`"WEATHER SENZOR: OK/FAIL"`, zelená/červená) sa kresbil na takmer rovnakej y-pozícii ako popisky `"H2O VETRANIE:"`, `"VONKU"`, `"VNÚTRI"` (rozdiel len 2px), čo spôsobovalo viditeľné prekreslenie/prekrytie textov.
+- Príčina: stav senzora bol pridaný neskôr (commit `f996a6c`) bez úpravy y-súradníc existujúcich popiskov ventilácie.
+- Fix: zúžená výška clear-rect pre riadok stavu senzora (12px → 9px) a popisky ventilácie posunuté z `box_y2+5` na `box_y2+13`, čím sa riadky oddelili bez prekrytia.
+- Poznámka: farba "WEATHER SENZOR" textu je v kóde korektne zelená/červená (`SYS_WIFI_OK_FG`/`SYS_WIFI_ERR_FG`), nie modrá - užívateľ zariadenie reálne nahlásil ako modrastý odtieň, čo je pravdepodobne vizuálny dojem na malom IPS displeji, nie chyba v `rgb_endian` konfigurácii (overené `LCD_RGB_ENDIAN_RGB` v `display_hal.cpp`).
+
+2. Konvencia pre ďalšie session:
+- Lubo teraz používa Claude Code (VS Code extension) namiesto/popri Gemini a Copilot CLI. Claude udržiava vlastnú perzistentnú pamäť MIMO repozitára (automatická, cross-session) a navyše pokračuje v aktualizácii tohto súboru rovnakým `[UPDATE-REDPINS-STATE]` formátom pre transparentnosť v repozitári.
+[/UPDATE-REDPINS-STATE]
+
+[UPDATE-REDPINS-STATE]
+Dátum: 2026-06-28 (Claude Code session, pokračovanie)
+Fáza: ESP32 Firmware (Sense) - HMI redesign + BME280 noise fix
+
+1. Redesign obrazovky ATMOSPHERE (gui.cpp):
+- Layout zjednotený so vzorom obrazovky SENSORS: horný riadok = dva boxy vedľa seba (VONKAJŠÍ TLAK z OpenWeatherMap, VNÚTORNÝ TLAK z lokálneho BME280 + trendová šípka), spodný riadok = jeden box cez celú šírku (KVALITA OVZDUŠIA, AQI+PM2.5).
+- Oprava: barometrický trend (`storage_get_pressure_trend()`) sa počíta z histórie lokálneho senzora (`sensor.csv`), pôvodne sa ale zobrazoval pri vonkajšom (OWM) tlaku - teraz je správne pri vnútornom.
+
+2. Vypnuté debug logy tlačidiel (gui.cpp):
+- `GUI_BUTTON_DEBUG` flag prepnutý na 0 (bolo 1). Tlačidlá sú overené ako funkčné, periodický "BTN RAW: ..." log každé 2s aj change-log boli len diagnostika počas vývoja.
+
+3. Fix: BME280 šum spôsoboval zbytočný redraw displeja (sensor_core.cpp, gui.cpp):
+- Príčina: BME280 má jemnejšie rozlíšenie ako starý DHT11, raw čítanie kolíše o ±0.2-0.3°C/%RH medzi vzorkami (1s interval). GUI porovnávalo cache na plnú float presnosť, displej ale zobrazuje len 1 desatinné miesto - takže aj neviditeľná zmena vyvolala redraw každých 2s.
+- Fix časť 1 (zdroj dát): EMA filter v `sensor_task` (`SENSOR_EMA_ALPHA = 0.1f`) vyhladzuje `s_last_t`/`s_last_h` priamo pri zápise - prospieva displeju, CSV logu aj BLE telemetrii naraz.
+- Fix časť 2 (GUI cache): nový `round1()` helper v gui.cpp zaokrúhľuje hodnotu na 1 desatinné miesto PRED porovnaním s cache (`cache_t`, `cache_h`, `cache_v_t`, `cache_v_h`, `cache_wt`) - redraw sa teda spustí len keď sa reálne zmení zobrazený text, nie pri šume v ďalších desatinách.
+- Overené užívateľom ako vyriešené ("uz je to kludnejsie").
+[/UPDATE-REDPINS-STATE]

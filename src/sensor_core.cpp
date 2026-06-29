@@ -22,6 +22,11 @@ static const char* TAG = "SENSOR_CORE";
 #define ENABLE_BH1750 1
 #define SENSOR_CORE_DEBUG_I2C 0
 #define SENSOR_MEASURE_INTERVAL_MS 1000
+// Zanshin: BME280 ma jemnejsie rozlisenie ako stary DHT11, jeho ADC sum
+// (+-0.2..0.3 C / %RH medzi vzorkami) by inak kazdu sekundu rozhybal
+// hodnotu a sposoboval zbytocny redraw displeja. EMA vyhladi sum priamo
+// pri zdroji (displej, CSV log aj BLE telemetria dostanu uz cistu hodnotu).
+#define SENSOR_EMA_ALPHA 0.1f
 
 #define BME280_ADDR_1 0x76
 #define BME280_ADDR_2 0x77
@@ -1102,8 +1107,8 @@ static void sensor_task(void* arg) {
         float lux = 0.0f;
 
         if (sensor_core_read_bme280(&t, &h, &p)) {
-            s_last_t = t;
-            s_last_h = h;
+            s_last_t += SENSOR_EMA_ALPHA * (t - s_last_t);
+            s_last_h += SENSOR_EMA_ALPHA * (h - s_last_h);
             s_last_p = p;
         }
 

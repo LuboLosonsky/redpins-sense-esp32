@@ -27,7 +27,7 @@ static const char* TAG = "GUI";
 #define BTN_ESC_PIN 3
 #define BTN_UP_PIN 4
 #define BTN_DOWN_PIN 5
-#define GUI_BUTTON_DEBUG 1
+#define GUI_BUTTON_DEBUG 0
 
 #if GUI_BUTTON_DEBUG
 #define BTN_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
@@ -386,6 +386,12 @@ static const uint8_t i_drop[32] = {
     0xFC, 0x3F, 0xFC, 0x7F, 0xFE, 0x7F, 0xFE, 0x7F, 0xFE, 0x3F, 0xFC,
     0x3F, 0xFC, 0x1F, 0xF8, 0x0F, 0xF0, 0x07, 0xE0, 0x03, 0xC0};
 
+// Zaokrúhli na 1 desatinné miesto - presne na to, čo sa reálne zobrazuje.
+// Cache musí porovnávať túto hodnotu, nie plnú float presnosť, inak
+// EMA filter v sensor_core nikdy "nedobehne" na bitovo identickú hodnotu
+// a displej by sa prekresľoval aj keď je zobrazený text rovnaký.
+static inline float round1(float v) { return roundf(v * 10.0f) / 10.0f; }
+
 // Pomocná funkcia na bezpečné formátovanie hodnoty senzora
 static void format_sensor_val(float val, char* int_buf, char* dec_buf) {
     char str[16];
@@ -498,6 +504,7 @@ extern "C" void gui_task(void* arg) {
     int cache_wh = -999, cache_wp = -999, cache_wid = -999;
     int cache_aqi = -999;
     float cache_pm25 = -999;
+    int cache_local_p = -999;
     int cache_weather_sensor_ok = -1;
     uint32_t last_brightness_update_ms = 0;
     float filtered_lux = -1.0f;
@@ -509,8 +516,8 @@ extern "C" void gui_task(void* arg) {
     int last_raw_down = -1;
 
     auto get_option_count = [&](int screen) {
-        if (screen == 3) return 6;
-        if (screen == 4) return 3;
+        if (screen == 4) return 6;
+        if (screen == 5) return 3;
         return 1;
     };
 
@@ -521,7 +528,7 @@ extern "C" void gui_task(void* arg) {
     };
 
     auto open_options_menu = [&]() {
-        if (current_screen == 3 || current_screen == 4) {
+        if (current_screen == 4 || current_screen == 5) {
             is_in_options = true;
             selected_option_idx = 0;
             force_redraw = true;
@@ -530,7 +537,7 @@ extern "C" void gui_task(void* arg) {
     };
 
     auto apply_selected_option = [&]() {
-        if (current_screen == 3) {
+        if (current_screen == 4) {
             if (selected_option_idx == 0)
                 graph_range_days = 1;
             else if (selected_option_idx == 1)
@@ -542,7 +549,7 @@ extern "C" void gui_task(void* arg) {
             else if (selected_option_idx == 4)
                 graph_flip_interval_ms = 30000;
             // idx 5 je Back (nic nerobime)
-        } else if (current_screen == 4) {
+        } else if (current_screen == 5) {
             if (selected_option_idx == 0) {
                 s_display_rotated = !s_display_rotated;
                 esp_lcd_panel_mirror(panel_handle, !s_display_rotated,
@@ -559,13 +566,13 @@ extern "C" void gui_task(void* arg) {
     };
 
     auto next_screen = [&]() {
-        current_screen = (current_screen + 1) % 5;
+        current_screen = (current_screen + 1) % 6;
         force_redraw = true;
         display_clear(THEME_BG);
     };
 
     auto prev_screen = [&]() {
-        current_screen = (current_screen + 4) % 5;
+        current_screen = (current_screen + 5) % 6;
         force_redraw = true;
         display_clear(THEME_BG);
     };
@@ -739,7 +746,7 @@ extern "C" void gui_task(void* arg) {
 
         // Settings potrebuje sviznejsi refresh pre live lux hodnotu.
         uint32_t redraw_period_ms = 2000;
-        if (!is_in_options && current_screen == 4) {
+        if (!is_in_options && current_screen == 5) {
             redraw_period_ms = 1000;
         }
 
@@ -773,7 +780,8 @@ extern "C" void gui_task(void* arg) {
 
             // Názov aktuálnej obrazovky (Zarovnaný doľava s paddingom na 12
             // znakov pre automatické vymazanie)
-            const char* screen_titles[] = {"SENSORS", "WEATHER", "ATMOSPHERE",
+            const char* screen_titles[] = {"COMPARE",     "SENSORS",
+                                           "WEATHER",     "ATMOSPHERE",
                                            "TEMPERATURE", "SYSTEM"};
             char title_buf[16];
             if (is_in_options) {
@@ -822,10 +830,10 @@ extern "C" void gui_task(void* arg) {
                 const char** options = opt_default;
                 int count = 1;
 
-                if (current_screen == 3) {
+                if (current_screen == 4) {
                     options = opt_graph;
                     count = 6;
-                } else if (current_screen == 4) {
+                } else if (current_screen == 5) {
                     options = opt_sys;
                     count = 3;
                 }
@@ -845,8 +853,126 @@ extern "C" void gui_task(void* arg) {
                     gui_draw_string(15, 33 + i * 24, options[i], fg, bg, 2);
                 }
             } else {
-                // --- OBRAZOVKA 0: Hlavný Dashboard ---
+                // --- OBRAZOVKA 0: COMPARE (Senzor vs API, 2x2 grid) ---
                 if (current_screen == 0) {
+                    float t = 0, h = 0;
+                    sensor_core_get_latest(&t, &h);
+
+                    float wt = 0;
+                    int wh = 0, wp = 0, wid = 0;
+                    bool has_api = weather_get_latest(&wt, &wh, &wp, &wid);
+
+                    char i_buf[8] = {0}, d_buf[8] = {0};
+                    int box_y = 30, box_w = 145, box_h = 82;
+                    int bx_t = 10;
+                    int bx_h = 165;
+                    int box_y2 = 117, box_h2 = 50;
+
+                    if (force_redraw) {
+                        gui_draw_round_rect_empty(bx_t, box_y, box_w, box_h, 4,
+                                                  DASH_TEMP_BORDER);
+                        gui_draw_string(bx_t + 10, box_y + 5,
+                                        "TEPLOTA SENZOR", DASH_TEMP_LBL,
+                                        THEME_BG, 1);
+                        gui_draw_icon_16x16(bx_t + box_w - 25, box_y + 3,
+                                            i_thermometer, DASH_TEMP_ICON,
+                                            THEME_BG, 1);
+
+                        gui_draw_round_rect_empty(bx_h, box_y, box_w, box_h, 4,
+                                                  WEATHER_DESC_FG);
+                        gui_draw_string(bx_h + 10, box_y + 5, "TEPLOTA API",
+                                        WEATHER_DESC_FG, THEME_BG, 1);
+
+                        gui_draw_round_rect_empty(bx_t, box_y2, box_w, box_h2,
+                                                  4, DASH_HUM_BORDER);
+                        gui_draw_string(bx_t + 10, box_y2 + 5,
+                                        "VLHKOST SENZOR", DASH_HUM_LBL,
+                                        THEME_BG, 1);
+
+                        gui_draw_round_rect_empty(bx_h, box_y2, box_w, box_h2,
+                                                  4, WEATHER_HUM_FG);
+                        gui_draw_string(bx_h + 10, box_y2 + 5, "VLHKOST API",
+                                        WEATHER_HUM_FG, THEME_BG, 1);
+
+                        if (!has_api) {
+                            gui_draw_string(bx_h + 15, box_y + 45, "CAKAM...",
+                                            GRAPH_MUTED_FG, THEME_BG, 1);
+                            gui_draw_string(bx_h + 15, box_y2 + 24, "CAKAM...",
+                                            GRAPH_MUTED_FG, THEME_BG, 1);
+                        }
+                    }
+
+                    // Teplota - lokálny senzor (BME280)
+                    float t_r = round1(t);
+                    if (force_redraw || t_r != cache_t) {
+                        format_sensor_val(t, i_buf, d_buf);
+                        int len_t = strlen(i_buf);
+                        int px_t = bx_t + 15;
+                        gui_draw_rect(bx_t + 15, box_y + 35, 125, 32,
+                                      THEME_BG);
+                        if (len_t == 1) px_t += 10;
+                        gui_draw_string(px_t, box_y + 35, i_buf, DASH_TEMP_VAL,
+                                        THEME_BG, 4);
+                        int dx_t = px_t + (len_t * 32);
+                        gui_draw_string(dx_t, box_y + 51, d_buf, DASH_TEMP_DEC,
+                                        THEME_BG, 2);
+                        int ux_t = dx_t + 36;
+                        gui_draw_rect(ux_t, box_y + 35, 4, 4, DASH_TEMP_UNIT);
+                        gui_draw_rect(ux_t + 1, box_y + 36, 2, 2, THEME_BG);
+                        gui_draw_string(ux_t + 6, box_y + 35, "C",
+                                        DASH_TEMP_UNIT, THEME_BG, 2);
+                        cache_t = t_r;
+                    }
+
+                    // Teplota - OpenWeatherMap API
+                    if (has_api) {
+                        float wt_r = round1(wt);
+                        if (force_redraw || wt_r != cache_wt) {
+                            format_sensor_val(wt, i_buf, d_buf);
+                            int len_t = strlen(i_buf);
+                            int px_t = bx_h + 15;
+                            gui_draw_rect(bx_h + 15, box_y + 35, 125, 32,
+                                          THEME_BG);
+                            if (len_t == 1) px_t += 10;
+                            gui_draw_string(px_t, box_y + 35, i_buf,
+                                            WEATHER_TEMP_FG, THEME_BG, 4);
+                            int dx_t = px_t + (len_t * 32);
+                            gui_draw_string(dx_t, box_y + 51, d_buf,
+                                            COLOR_LIGHT_GRAY, THEME_BG, 2);
+                            int ux_t = dx_t + 36;
+                            gui_draw_string(ux_t + 6, box_y + 35, "C",
+                                            WEATHER_DESC_FG, THEME_BG, 2);
+                            cache_wt = wt_r;
+                        }
+                    }
+
+                    // Vlhkosť - lokálny senzor (BME280)
+                    float h_r = round1(h);
+                    if (force_redraw || h_r != cache_h) {
+                        char hv_buf[12];
+                        snprintf(hv_buf, sizeof(hv_buf), "%.1f %%", h);
+                        gui_draw_rect(bx_t + 10, box_y2 + 22, 125, 20,
+                                      THEME_BG);
+                        gui_draw_string(bx_t + 10, box_y2 + 24, hv_buf,
+                                        DASH_HUM_VAL, THEME_BG, 2);
+                        cache_h = h_r;
+                    }
+
+                    // Vlhkosť - OpenWeatherMap API
+                    if (has_api) {
+                        if (force_redraw || wh != cache_wh) {
+                            char hv_buf[12];
+                            snprintf(hv_buf, sizeof(hv_buf), "%d %%", wh);
+                            gui_draw_rect(bx_h + 10, box_y2 + 22, 125, 20,
+                                          THEME_BG);
+                            gui_draw_string(bx_h + 10, box_y2 + 24, hv_buf,
+                                            WEATHER_HUM_FG, THEME_BG, 2);
+                            cache_wh = wh;
+                        }
+                    }
+                }
+                // --- OBRAZOVKA 1: Hlavný Dashboard (Sensors) ---
+                else if (current_screen == 1) {
                     float t = 0, h = 0;
                     sensor_core_get_latest(&t, &h);
 
@@ -879,7 +1005,8 @@ extern "C" void gui_task(void* arg) {
                                                   4, COLOR_LIGHT_GRAY);
                     }
 
-                    if (force_redraw || t != cache_t) {
+                    float t_r = round1(t);
+                    if (force_redraw || t_r != cache_t) {
                         format_sensor_val(t, i_buf, d_buf);
                         int len_t = strlen(i_buf);
                         int px_t = bx_t + 15;
@@ -895,14 +1022,14 @@ extern "C" void gui_task(void* arg) {
                         gui_draw_rect(ux_t + 1, box_y + 36, 2, 2, THEME_BG);
                         gui_draw_string(ux_t + 6, box_y + 35, "C",
                                         DASH_TEMP_UNIT, THEME_BG, 2);
-                        cache_t = t;
+                        cache_t = t_r;
                     }
 
                     int weather_ok_now =
                         sensor_core_weather_sensor_ok() ? 1 : 0;
                     if (force_redraw ||
                         weather_ok_now != cache_weather_sensor_ok) {
-                        gui_draw_rect(bx2 + 12, box_y2 + 3, 280, 12, THEME_BG);
+                        gui_draw_rect(bx2 + 12, box_y2 + 3, 280, 9, THEME_BG);
                         gui_draw_string(
                             bx2 + 12, box_y2 + 3,
                             weather_ok_now ? "WEATHER SENZOR: OK"
@@ -912,7 +1039,8 @@ extern "C" void gui_task(void* arg) {
                         cache_weather_sensor_ok = weather_ok_now;
                     }
 
-                    if (force_redraw || h != cache_h) {
+                    float h_r = round1(h);
+                    if (force_redraw || h_r != cache_h) {
                         format_sensor_val(h, i_buf, d_buf);
                         int len_h = strlen(i_buf);
                         int px_h = bx_h + 15;
@@ -926,7 +1054,7 @@ extern "C" void gui_task(void* arg) {
                         int ux_h = dx_h + 36;
                         gui_draw_string(ux_h, box_y + 35, "%", DASH_HUM_UNIT,
                                         THEME_BG, 2);
-                        cache_h = h;
+                        cache_h = h_r;
                     }
 
                     float wt = 0;
@@ -934,8 +1062,10 @@ extern "C" void gui_task(void* arg) {
 
                     // Zobrazíme asistenta len ak už máme stiahnuté dáta počasia
                     if (weather_get_latest(&wt, &wh, &wp, &wid)) {
-                        if (force_redraw || t != cache_v_t || h != cache_v_h ||
-                            wt != cache_wt || wh != cache_wh) {
+                        float wt_r = round1(wt);
+                        if (force_redraw || t_r != cache_v_t ||
+                            h_r != cache_v_h || wt_r != cache_wt ||
+                            wh != cache_wh) {
                             float ah_in = get_absolute_humidity(t, h);
                             float ah_out = get_absolute_humidity(wt, (float)wh);
 
@@ -950,7 +1080,7 @@ extern "C" void gui_task(void* arg) {
                                 vent_color = SYS_WIFI_ERR_FG;
                             }
 
-                            gui_draw_string(160 - (13 * 8) / 2, box_y2 + 5,
+                            gui_draw_string(160 - (13 * 8) / 2, box_y2 + 13,
                                             "H2O VETRANIE:", COLOR_LIGHT_GRAY,
                                             THEME_BG, 1);
                             gui_draw_rect(15, box_y2 + 25, 270, 16, THEME_BG);
@@ -966,7 +1096,7 @@ extern "C" void gui_task(void* arg) {
                             int out_tot_w = out_w + 4 + 8;
                             int out_x = left_center - (out_tot_w / 2);
                             gui_draw_string(left_center - (5 * 8) / 2,
-                                            box_y2 + 5, "VONKU",
+                                            box_y2 + 13, "VONKU",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
                             gui_draw_string(out_x, box_y2 + 25, out_val,
                                             COLOR_LIGHT_GRAY, THEME_BG, 2);
@@ -980,16 +1110,16 @@ extern "C" void gui_task(void* arg) {
                             int in_tot_w = in_w + 4 + 8;
                             int in_x = right_center - (in_tot_w / 2);
                             gui_draw_string(right_center - (6 * 8) / 2,
-                                            box_y2 + 5, "VNUTRI",
+                                            box_y2 + 13, "VNUTRI",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
                             gui_draw_string(in_x, box_y2 + 25, in_val,
                                             COLOR_LIGHT_GRAY, THEME_BG, 2);
                             gui_draw_string(in_x + in_w + 4, box_y2 + 33, "g",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
 
-                            cache_v_t = t;
-                            cache_v_h = h;
-                            cache_wt = wt;
+                            cache_v_t = t_r;
+                            cache_v_h = h_r;
+                            cache_wt = wt_r;
                             cache_wh = wh;
                         }
                     } else if (force_redraw) {
@@ -999,8 +1129,8 @@ extern "C" void gui_task(void* arg) {
                     }
                 }
 
-                // --- OBRAZOVKA 1: Počasie (OpenWeather API) ---
-                else if (current_screen == 1) {
+                // --- OBRAZOVKA 2: Počasie (OpenWeather API) ---
+                else if (current_screen == 2) {
                     float wt = 0;
                     int wh = 0, wp = 0, wid = 0;
                     if (weather_get_latest(&wt, &wh, &wp, &wid)) {
@@ -1138,8 +1268,8 @@ extern "C" void gui_task(void* arg) {
                     }
                     last_brightness_update_ms = now_ms;
                 }
-                // --- OBRAZOVKA 2: Ovzdušie a Tlak (Nová ATMOSPHERE) ---
-                if (current_screen == 2) {
+                // --- OBRAZOVKA 3: Ovzdušie a Tlak (Nová ATMOSPHERE) ---
+                if (current_screen == 3) {
                     float wt = 0;
                     int wh = 0, wp = 0, wid = 0;
                     if (weather_get_latest(&wt, &wh, &wp, &wid)) {
@@ -1147,63 +1277,74 @@ extern "C" void gui_task(void* arg) {
                         float pm25 = 0;
                         weather_get_aqi(&aqi, &pm25);
 
-                        int box_w = 290, box_x = 10;
+                        float lt = 0, lh = 0, lp = 0, llux = 0;
+                        sensor_core_get_latest_full(&lt, &lh, &lp, &llux);
+                        int local_p = (int)lp;
+
+                        // Horný riadok: VONKAJSI / VNUTORNY tlak (layout
+                        // zhodný s obrazovkou SENSORS)
+                        int box_y = 30, box_w = 145, box_h = 82;
+                        int bx_t = 10;
+                        int bx_h = 165;
+                        // Spodný riadok: Kvalita ovzdušia (cez celú šírku)
+                        int box_y2 = 117, box_w2 = 300, box_h2 = 50, bx2 = 10;
 
                         if (force_redraw) {
-                            gui_draw_round_rect_empty(box_x, 30, box_w, 65, 4,
-                                                      COLOR_LIGHT_GRAY);
-                            gui_draw_string(box_x + 10, 35, "KVALITA OVZDUSIA",
-                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
+                            gui_draw_round_rect_empty(bx_t, box_y, box_w,
+                                                      box_h, 4,
+                                                      WEATHER_PRESS_FG);
+                            gui_draw_string(bx_t + 10, box_y + 5,
+                                            "VONKAJSI TLAK", WEATHER_PRESS_FG,
+                                            THEME_BG, 1);
 
-                            gui_draw_round_rect_empty(box_x, 100, box_w, 65, 4,
+                            gui_draw_round_rect_empty(bx_h, box_y, box_w,
+                                                      box_h, 4,
+                                                      WEATHER_PRESS_FG);
+                            gui_draw_string(bx_h + 10, box_y + 5,
+                                            "VNUTORNY TLAK", WEATHER_PRESS_FG,
+                                            THEME_BG, 1);
+
+                            gui_draw_round_rect_empty(bx2, box_y2, box_w2,
+                                                      box_h2, 4,
                                                       COLOR_LIGHT_GRAY);
-                            gui_draw_string(box_x + 10, 105,
-                                            "BAROMETRICKY TLAK",
+                            gui_draw_string(bx2 + 10, box_y2 + 5,
+                                            "KVALITA OVZDUSIA",
                                             COLOR_LIGHT_GRAY, THEME_BG, 1);
                         }
 
-                        if (force_redraw || aqi != cache_aqi ||
-                            pm25 != cache_pm25) {
-                            gui_draw_rect(box_x + 10, 48, 270, 40, THEME_BG);
-
-                            const char* aqi_str = "NEZNAMO";
-                            uint16_t aqi_color = COLOR_LIGHT_GRAY;
-
-                            if (aqi > 0 && aqi <= 2) {
-                                aqi_str = "CISTE";
-                                aqi_color = SYS_WIFI_OK_FG;
-                            } else if (aqi == 3) {
-                                aqi_str = "ZHORSE.";
-                                aqi_color = COLOR_LIGHT_GRAY;
-                            } else if (aqi > 3) {
-                                aqi_str = "SMOG";
-                                aqi_color = SYS_WIFI_ERR_FG;
-                            }
-
-                            gui_draw_string(box_x + 10, 50, aqi_str, aqi_color,
-                                            THEME_BG, 3);
-
-                            char pm_buf[32];
-                            snprintf(pm_buf, sizeof(pm_buf),
-                                     "PM2.5: %.1f ug/m3", pm25);
-                            gui_draw_string(box_x + 150, 60, pm_buf,
-                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
-
-                            cache_aqi = aqi;
-                            cache_pm25 = pm25;
-                        }
-
+                        // Vonkajší tlak (OpenWeatherMap)
                         if (force_redraw || wp != cache_wp) {
-                            gui_draw_rect(box_x + 10, 120, 270, 40, THEME_BG);
+                            gui_draw_rect(bx_t + 10, box_y + 28, 125, 38,
+                                          THEME_BG);
 
                             char p_buf[16];
                             snprintf(p_buf, sizeof(p_buf), "%d", wp);
-                            gui_draw_string(box_x + 10, 122, p_buf,
-                                            WEATHER_TITLE_FG, THEME_BG, 4);
+                            gui_draw_string(bx_t + 10, box_y + 32, p_buf,
+                                            WEATHER_TITLE_FG, THEME_BG, 3);
 
-                            int pw = strlen(p_buf) * 32;
-                            gui_draw_string(box_x + 10 + pw + 8, 138, "hPa",
-                                            COLOR_LIGHT_GRAY, THEME_BG, 2);
+                            int pw = strlen(p_buf) * 24;
+                            gui_draw_string(bx_t + 10 + pw + 6, box_y + 58,
+                                            "hPa", COLOR_LIGHT_GRAY, THEME_BG,
+                                            1);
+
+                            cache_wp = wp;
+                        }
+
+                        // Vnútorný tlak (lokálny BME280) + barometrický
+                        // trend
+                        if (force_redraw || local_p != cache_local_p) {
+                            gui_draw_rect(bx_h + 10, box_y + 28, 125, 38,
+                                          THEME_BG);
+
+                            char p_buf[16];
+                            snprintf(p_buf, sizeof(p_buf), "%d", local_p);
+                            gui_draw_string(bx_h + 10, box_y + 32, p_buf,
+                                            WEATHER_TITLE_FG, THEME_BG, 3);
+
+                            int pw = strlen(p_buf) * 24;
+                            gui_draw_string(bx_h + 10 + pw + 6, box_y + 58,
+                                            "hPa", COLOR_LIGHT_GRAY, THEME_BG,
+                                            1);
 
                             int trend = storage_get_pressure_trend();
                             const char* t_str = "-";
@@ -1215,10 +1356,43 @@ extern "C" void gui_task(void* arg) {
                                 t_str = "v";
                                 t_color = SYS_WIFI_ERR_FG;
                             }
-                            gui_draw_string(box_x + box_w - 45, 122, t_str,
-                                            t_color, THEME_BG, 4);
+                            gui_draw_string(bx_h + box_w - 28, box_y + 32,
+                                            t_str, t_color, THEME_BG, 3);
 
-                            cache_wp = wp;
+                            cache_local_p = local_p;
+                        }
+
+                        // Kvalita ovzdušia (AQI + PM2.5)
+                        if (force_redraw || aqi != cache_aqi ||
+                            pm25 != cache_pm25) {
+                            gui_draw_rect(bx2 + 10, box_y2 + 25, 280, 20,
+                                          THEME_BG);
+
+                            const char* aqi_str = "NEZNAME";
+                            uint16_t aqi_color = COLOR_LIGHT_GRAY;
+
+                            if (aqi > 0 && aqi <= 2) {
+                                aqi_str = "CISTE";
+                                aqi_color = SYS_WIFI_OK_FG;
+                            } else if (aqi == 3) {
+                                aqi_str = "ZHORSENE";
+                                aqi_color = COLOR_LIGHT_GRAY;
+                            } else if (aqi > 3) {
+                                aqi_str = "SMOG";
+                                aqi_color = SYS_WIFI_ERR_FG;
+                            }
+
+                            gui_draw_string(bx2 + 10, box_y2 + 25, aqi_str,
+                                            aqi_color, THEME_BG, 2);
+
+                            char pm_buf[32];
+                            snprintf(pm_buf, sizeof(pm_buf),
+                                     "PM2.5: %.1f ug/m3", pm25);
+                            gui_draw_string(bx2 + 140, box_y2 + 31, pm_buf,
+                                            COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                            cache_aqi = aqi;
+                            cache_pm25 = pm25;
                         }
                     } else {
                         if (force_redraw) {
@@ -1227,8 +1401,8 @@ extern "C" void gui_task(void* arg) {
                         }
                     }
                 }
-                // --- OBRAZOVKA 4: Systém a Nastavenia ---
-                else if (current_screen == 4) {
+                // --- OBRAZOVKA 5: Systém a Nastavenia ---
+                else if (current_screen == 5) {
                     app_config_t* cfg = app_config_get();
                     int sy = 30;
 
@@ -1260,6 +1434,36 @@ extern "C" void gui_task(void* arg) {
                                     THEME_BG, 1);
                     gui_draw_string(sx, 90, "Aktualizacia: ~1s",
                                     COLOR_LIGHT_GRAY, THEME_BG, 1);
+
+                    // --- ULOZISKO (LittleFS) - pravy stlpec, pod
+                    // "Aktualizacia" ---
+                    gui_draw_string(sx, 104, "ULOZISKO:", SYS_LABEL_FG,
+                                    THEME_BG, 1);
+
+                    size_t fs_total = 0, fs_used = 0;
+                    storage_get_fs_info(&fs_total, &fs_used);
+
+                    if (fs_total > 0) {
+                        char fs_buf[32];
+                        float used_kb = fs_used / 1024.0f;
+                        float total_kb = fs_total / 1024.0f;
+                        float used_pct = (fs_used * 100.0f) / fs_total;
+                        snprintf(fs_buf, sizeof(fs_buf), "%.0f/%.0f KB (%.0f%%)",
+                                 used_kb, total_kb, used_pct);
+                        gui_draw_string(sx, 116, fs_buf, SYS_VALUE_FG,
+                                        THEME_BG, 1);
+
+                        // Minimalistický Progress bar
+                        int bar_w = 140;
+                        int fill_w =
+                            (int)(((float)fs_used / fs_total) * bar_w);
+                        gui_draw_rect(sx, 128, bar_w, 8, STATUS_BORDER_FG);
+                        if (fill_w > 0)
+                            gui_draw_rect(sx, 128, fill_w, 8, PROGRESS_FG);
+                    } else {
+                        gui_draw_string(sx, 116, "FS Error", SYS_WIFI_ERR_FG,
+                                        THEME_BG, 1);
+                    }
 
                     gui_draw_string(10, sy, "ZARIADENIE:", SYS_LABEL_FG,
                                     THEME_BG, 1);
@@ -1313,37 +1517,9 @@ extern "C" void gui_task(void* arg) {
                              cfg->bmp_temp_offset);
                     gui_draw_string(10, sy + 12, cal_info, SYS_VALUE_FG,
                                     THEME_BG, 1);
-                    sy += 30;
-
-                    // --- ULOZISKO (LittleFS) ---
-                    gui_draw_string(10, sy, "ULOZISKO:", SYS_LABEL_FG, THEME_BG,
-                                    1);
-
-                    size_t total = 0, used = 0;
-                    storage_get_fs_info(&total, &used);
-
-                    if (total > 0) {
-                        char fs_buf[32];
-                        float used_kb = used / 1024.0f;
-                        float total_kb = total / 1024.0f;
-                        snprintf(fs_buf, sizeof(fs_buf), "%.1f / %.1f KB",
-                                 used_kb, total_kb);
-                        gui_draw_string(10, sy + 12, fs_buf, SYS_VALUE_FG,
-                                        THEME_BG, 1);
-
-                        // Minimalistický Progress bar
-                        int bar_w = 150;
-                        int fill_w = (int)(((float)used / total) * bar_w);
-                        gui_draw_rect(10, sy + 24, bar_w, 8, STATUS_BORDER_FG);
-                        if (fill_w > 0)
-                            gui_draw_rect(10, sy + 24, fill_w, 8, PROGRESS_FG);
-                    } else {
-                        gui_draw_string(10, sy + 12, "FS Error",
-                                        SYS_WIFI_ERR_FG, THEME_BG, 1);
-                    }
                 }
-                // --- OBRAZOVKA 3: Graf teploty zo senzora (24h) ---
-                else if (current_screen == 3) {
+                // --- OBRAZOVKA 4: Graf teploty zo senzora (24h) ---
+                else if (current_screen == 4) {
                     // Zanshin: Prekreslíme pri zmene obrazovky alebo
                     // každých 30 sekúnd pre rotáciu grafu.
                     bool time_to_flip = (now_ms - last_graph_redraw_time) >=
@@ -1624,7 +1800,7 @@ extern "C" void gui_task(void* arg) {
         // Ak sme na obrazovke s grafom (a nie v options), vykreslíme
         // bežiaci bod zľava doprava iba raz za sekundu (odstránenie
         // blikania)
-        if (current_screen == 3 && !is_in_options) {
+        if (current_screen == 4 && !is_in_options) {
             uint32_t elapsed = now_ms - last_graph_redraw_time;
             uint32_t elapsed_sec = elapsed / 1000;
 
