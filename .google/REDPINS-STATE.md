@@ -90,3 +90,25 @@ Fáza: ESP32 Firmware (Sense) - HMI redesign + BME280 noise fix
 - Fix časť 2 (GUI cache): nový `round1()` helper v gui.cpp zaokrúhľuje hodnotu na 1 desatinné miesto PRED porovnaním s cache (`cache_t`, `cache_h`, `cache_v_t`, `cache_v_h`, `cache_wt`) - redraw sa teda spustí len keď sa reálne zmení zobrazený text, nie pri šume v ďalších desatinách.
 - Overené užívateľom ako vyriešené ("uz je to kludnejsie").
 [/UPDATE-REDPINS-STATE]
+
+[UPDATE-REDPINS-STATE]
+Dátum: 2026-06-29 (Claude Code session)
+Fáza: ESP32 Firmware (Sense) - Pridaná obrazovka COMPARE + Refaktoring gui.cpp na moduly
+
+1. Nová obrazovka COMPARE (gui.cpp, screen index 0, hned po boote):
+- 2x2 grid: horný riadok teplota senzor (BME280) vs API (OpenWeatherMap), spodný riadok vlhkosť senzor vs API. Posunulo všetky ostatné obrazovky o +1 index (SENSORS=1, WEATHER=2, ATMOSPHERE=3, TEMPERATURE=4, SYSTEM=5), rotácia zmenená z %5 na %6.
+- Presun ULOZISKO sekcie na SYSTEM obrazovke z ľavého do pravého stĺpca (ľavý stĺpec pri plnom obsadení presahoval LCD_V_RES=172px, ULOZISKO bolo mimo viditeľnej oblasti displeja).
+
+2. Identifikovaný (nie opravený) bug v auto-jase displeja:
+- `map_lux_to_backlight_percent()` v gui.cpp má skutočný strop 88%, nikdy nedosiahne 100%.
+- Trojvrstvové vyhladzovanie (EMA filtered_lux 80/20 + hystéréza dead-zone + slew-rate limit ±3%/s) sa kumuluje, takže pri náhlej zmene osvetlenia trvá ~20-30s, kým sa to prejaví na displeji - pôsobí to ako "nereaguje". Užívateľ rozhodol opraviť to v samostatnej session, nie počas refaktoringu.
+
+3. VEĽKÝ REFAKTORING: gui.cpp rozdelený z 1843 na 613 riadkov (orchestrácia) + 13 nových modulov:
+- `gui_state.h` - `struct GuiState` (zdieľaný stav) + button pin defines.
+- `gui_primitives.h/.cpp` - kresliace primitívy (gui_draw_string/rect/...), DMA buffery, blend_color.
+- `gui_helpers.h/.cpp` - round1, format_sensor_val, get_absolute_humidity, get_weather_desc, map_lux_to_backlight_percent, ikony i_thermometer/i_drop.
+- `gui_screen_compare/sensors/weather/atmosphere/system/graph.h/.cpp` - jeden modul na obrazovku, signatúra `void gui_draw_screen_X(GuiState& s, uint32_t now_ms)`.
+- Architektúra: plain struct + free funkcie (žiadne virtuály, žiadna nová heap alokácia) - zachováva projektový štýl "C s structami". 8 pôvodných lambda closures v gui_task prevedené na static free funkcie.
+- DÔLEŽITÉ pre budúce zmeny: `src/CMakeLists.txt` má EXPLICITNÝ zoznam SRCS, nie glob - nový .cpp súbor sa musí pridať manuálne, inak sa ticho nepreloží.
+- Refaktoring robený postupne po krokoch (extrakcia primitives → helpers → GuiState in-place → SYSTEM → WEATHER → ATMOSPHERE → COMPARE → SENSORS → GRAPH → cleanup), s build+flash+smoke-test po každom kroku. Žiadna funkčná zmena, čisto štrukturálne. Užívateľ overil každý krok na fyzickom zariadení.
+[/UPDATE-REDPINS-STATE]

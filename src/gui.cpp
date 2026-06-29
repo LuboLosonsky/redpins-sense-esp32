@@ -1,6 +1,4 @@
-#include <math.h>
 #include <stdio.h>
-#include <string.h>
 #include <time.h>
 
 #include "app_config.h"
@@ -10,7 +8,6 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "font8x8.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gui_colors.h"
@@ -24,8 +21,6 @@
 #include "gui_screen_weather.h"
 #include "gui_state.h"
 #include "sensor_core.h"
-#include "storage.h"
-#include "weather_client.h"
 #include "weather_icons.h"
 #include "wifi_scanner.h"
 
