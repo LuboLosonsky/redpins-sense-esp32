@@ -121,6 +121,12 @@ static void ensure_wifi_init() {
 
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
         ESP_ERROR_CHECK(esp_wifi_start());
+
+        // Zanshin: Sense potrebuje WiFi len pre NTP a OWM fetch raz za 20
+        // min - modem-sleep necha stanicu asociovanu (ziadny reconnect),
+        // radio len "drieme" medzi DTIM beacon intervalmi.
+        ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
+
         wifi_initialized = true;
     }
 }
