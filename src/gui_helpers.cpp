@@ -24,19 +24,43 @@ float get_absolute_humidity(float t, float h) {
     return (2.16679f * pv * 100.0f) / (273.15f + t);
 }
 
+// OWM condition ID -> RGB565 ikona (day a night pouzivaju tu istu sadu)
+// Ref: https://openweathermap.org/weather-conditions
+WeatherIconRef get_weather_icon(int id) {
+    if (id >= 200 && id < 300) return {icon_thunderstorm, ICON_THUNDERSTORM_W, ICON_THUNDERSTORM_H};
+    if (id >= 300 && id < 400) return {icon_rain,         ICON_RAIN_W,         ICON_RAIN_H};
+    if (id >= 500 && id < 600) {
+        if (id == 511)         return {icon_snow,         ICON_SNOW_W,         ICON_SNOW_H};
+        if (id <= 504)         return {icon_sun_shower,   ICON_SUN_SHOWER_W,   ICON_SUN_SHOWER_H};
+        return                        {icon_rain,         ICON_RAIN_W,         ICON_RAIN_H};
+    }
+    if (id >= 600 && id < 700) return {icon_snow,         ICON_SNOW_W,         ICON_SNOW_H};
+    if (id >= 700 && id < 800) return {icon_fog,          ICON_FOG_W,          ICON_FOG_H};
+    if (id == 800)             return {icon_sun,          ICON_SUN_W,          ICON_SUN_H};
+    if (id == 801)             return {icon_partly_cloudy,ICON_PARTLY_CLOUDY_W,ICON_PARTLY_CLOUDY_H};
+    if (id >= 802 && id < 900) return {icon_clouds,       ICON_CLOUDS_W,       ICON_CLOUDS_H};
+    return {icon_sun, ICON_SUN_W, ICON_SUN_H};
+}
+
 uint8_t map_lux_to_backlight_percent(float lux) {
-    // Tuned for indoor comfort: softer low-light response, no harsh jumps.
-    if (lux < 2.0f) return 14;
-    if (lux < 6.0f) return 17;
-    if (lux < 15.0f) return 21;
-    if (lux < 35.0f) return 26;
-    if (lux < 80.0f) return 32;
-    if (lux < 180.0f) return 39;
-    if (lux < 400.0f) return 47;
-    if (lux < 900.0f) return 56;
-    if (lux < 2000.0f) return 66;
-    if (lux < 5000.0f) return 77;
-    return 88;
+    // BH1750 snima aj svetlo odrazene od displeja - v tme cita ~25-35 lux
+    // napriek nulovemu ambientnemu osvetleniu. Odpocitame bias aby
+    // tato reflexia neudrzovala jas nad minimalnou hodnotou.
+    static const float LUX_DISPLAY_BIAS = 30.0f;
+    float v = lux > LUX_DISPLAY_BIAS ? lux - LUX_DISPLAY_BIAS : 0.0f;
+
+    if (v < 1.0f)    return 5;
+    if (v < 2.0f)    return 8;
+    if (v < 6.0f)    return 12;
+    if (v < 15.0f)   return 18;
+    if (v < 35.0f)   return 25;
+    if (v < 80.0f)   return 33;
+    if (v < 180.0f)  return 42;
+    if (v < 400.0f)  return 53;
+    if (v < 900.0f)  return 65;
+    if (v < 2000.0f) return 78;
+    if (v < 5000.0f) return 90;
+    return 100;
 }
 
 // --- IKONY PRE SENZORY (16x16, 1bpp) ---

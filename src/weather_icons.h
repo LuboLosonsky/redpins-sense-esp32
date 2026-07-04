@@ -45,3 +45,40 @@ const uint8_t i_wifi[32] = {0x03, 0xC0, 0x1F, 0xF8, 0x38, 0x1C, 0x70, 0x0E,
                             0xE0, 0x07, 0xC0, 0x03, 0x00, 0x00, 0x03, 0xC0,
                             0x0F, 0xF0, 0x1C, 0x38, 0x38, 0x1C, 0x00, 0x00,
                             0x01, 0x80, 0x03, 0xC0, 0x03, 0xC0, 0x01, 0x80};
+
+// --- RGB565 Weather Icons (64x~64, from LVGL converter) ---
+// Pixels stored as native little-endian uint16_t RGB565.
+// Transparent/background = 0x0000 (skip when drawing).
+
+#define ICON_SUN_W 64
+#define ICON_SUN_H 63
+extern const uint16_t icon_sun[4032];
+
+#define ICON_RAIN_W 64
+#define ICON_RAIN_H 52
+extern const uint16_t icon_rain[3328];
+
+#define ICON_SNOW_W 64
+#define ICON_SNOW_H 63
+extern const uint16_t icon_snow[4032];
+
+#define ICON_THUNDERSTORM_W 64
+#define ICON_THUNDERSTORM_H 61
+extern const uint16_t icon_thunderstorm[3904];
+
+#define ICON_FOG_W 64
+#define ICON_FOG_H 38
+extern const uint16_t icon_fog[2432];
+
+#define ICON_SUN_SHOWER_W 62
+#define ICON_SUN_SHOWER_H 64
+extern const uint16_t icon_sun_shower[3968];
+
+#define ICON_CLOUDS_W 64
+#define ICON_CLOUDS_H 32
+extern const uint16_t icon_clouds[2048];
+
+#define ICON_PARTLY_CLOUDY_W 64
+#define ICON_PARTLY_CLOUDY_H 49
+extern const uint16_t icon_partly_cloudy[3136];
+

@@ -1,3 +1,3 @@
-idf_component_register(SRCS "display_hal.cpp" "main.cpp" "storage.cpp" "ble_server.cpp" "wifi_scanner.cpp" "app_config.cpp" "sensor_core.cpp"  "gui.cpp" "weather_client.cpp" "gui_primitives.cpp" "gui_helpers.cpp" "gui_screen_system.cpp" "gui_screen_weather.cpp" "gui_screen_atmosphere.cpp" "gui_screen_compare.cpp" "gui_screen_sensors.cpp" "gui_screen_graph.cpp"
+idf_component_register(SRCS "display_hal.cpp" "main.cpp" "storage.cpp" "ble_server.cpp" "wifi_scanner.cpp" "app_config.cpp" "sensor_core.cpp"  "gui.cpp" "weather_client.cpp" "gui_primitives.cpp" "gui_helpers.cpp" "gui_screen_system.cpp" "gui_screen_weather.cpp" "gui_screen_atmosphere.cpp" "gui_screen_compare.cpp" "gui_screen_sensors.cpp" "gui_screen_graph.cpp" "weather_icons.cpp"
                     INCLUDE_DIRS "."
                     REQUIRES littlefs)

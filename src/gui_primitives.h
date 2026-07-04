@@ -19,3 +19,7 @@ void gui_draw_line(int x0, int y0, int x1, int y1, uint16_t color);
 
 // Zmiešanie dvoch RGB565 farieb (napr. priehľadná výplň pod čiarou grafu).
 uint16_t blend_color(uint16_t fg, uint16_t bg, float alpha);
+
+// Bitmapa RGB565 (napr. ikona počasia). 0x0000 = čierna = THEME_BG (žiadna
+// špeciálna transparencia nie je potrebná na dark-mode displeji).
+void gui_draw_bitmap_rgb565(int x, int y, int w, int h, const uint16_t* data);

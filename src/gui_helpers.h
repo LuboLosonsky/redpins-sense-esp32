@@ -1,11 +1,21 @@
 #pragma once
 #include <math.h>
 #include <stdint.h>
+#include "weather_icons.h"
 
 // --- ZDIEĽANÉ POMOCNÉ FUNKCIE A IKONY PRE GUI MODULY ---
 
 // Preklad OpenWeatherMap ID na krátky text (napr. pre obrazovku WEATHER).
 const char* get_weather_desc(int id);
+
+// RGB565 ikona počasia pre dané OWM condition ID.
+// data = nullptr ak ID nie je rozpoznané (nesmie nastať pri bežných OWM hodnotách).
+struct WeatherIconRef {
+    const uint16_t* data;
+    uint8_t w;
+    uint8_t h;
+};
+WeatherIconRef get_weather_icon(int id);
 
 // Magnus-Tetens rovnica pre absolútnu vlhkosť (g/m3) - používa COMPARE a
 // SENSORS (ventilačný asistent).

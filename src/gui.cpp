@@ -44,7 +44,7 @@ extern "C" void display_clear(uint16_t color);
 // --- STAVOVÝ AUTOMAT (Obrazovky / Options menu) ---
 static int gui_get_option_count(int screen) {
     if (screen == 4) return 6;
-    if (screen == 5) return 3;
+    if (screen == 5) return 4;
     return 1;
 }
 
@@ -87,8 +87,12 @@ static void gui_apply_selected_option(GuiState& s) {
             app_config_get()->auto_brightness =
                 !app_config_get()->auto_brightness;
             app_config_save();
+        } else if (s.selected_option_idx == 2) {
+            app_config_get()->auto_brightness = false;
+            app_config_save();
+            display_hal_set_backlight_percent(10);
         }
-        // idx 2 je Back (nic nerobime)
+        // idx 3 je Back (nic nerobime)
     }
 }
 
@@ -479,7 +483,7 @@ extern "C" void gui_task(void* arg) {
                 char opt_auto_bri[24];
                 snprintf(opt_auto_bri, sizeof(opt_auto_bri), "Auto jas: %s",
                          app_config_get()->auto_brightness ? "ON" : "OFF");
-                const char* opt_sys[] = {"Otocit o 180", opt_auto_bri, "Back"};
+                const char* opt_sys[] = {"Otocit o 180", opt_auto_bri, "Jas: 10% test", "Back"};
                 const char* opt_default[] = {"Back"};
 
                 const char** options = opt_default;
@@ -490,7 +494,7 @@ extern "C" void gui_task(void* arg) {
                     count = 6;
                 } else if (s.current_screen == 5) {
                     options = opt_sys;
-                    count = 3;
+                    count = 4;
                 }
 
                 for (int i = 0; i < count; i++) {
@@ -536,7 +540,7 @@ extern "C" void gui_task(void* arg) {
                             s.filtered_lux = lux_cur;
                         } else {
                             s.filtered_lux =
-                                (s.filtered_lux * 0.80f) + (lux_cur * 0.20f);
+                                (s.filtered_lux * 0.75f) + (lux_cur * 0.25f);
                         }
                         uint8_t target =
                             map_lux_to_backlight_percent(s.filtered_lux);
@@ -546,8 +550,8 @@ extern "C" void gui_task(void* arg) {
                         // flicker when lux oscillates around a threshold.
                         int delta = (int)target - (int)current;
                         if (delta >= 2 || delta <= -2) {
-                            if (delta > 3) delta = 3;
-                            if (delta < -3) delta = -3;
+                            if (delta > 6) delta = 6;
+                            if (delta < -6) delta = -6;
                             uint8_t next = (uint8_t)((int)current + delta);
                             display_hal_set_backlight_percent(next);
                         }

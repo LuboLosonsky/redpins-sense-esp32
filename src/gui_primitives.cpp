@@ -286,6 +286,17 @@ void gui_draw_round_rect_empty(int x, int y, int w, int h, int r,
     }
 }
 
+void gui_draw_bitmap_rgb565(int x, int y, int w, int h, const uint16_t* data) {
+    if (!panel_handle || w <= 0 || h <= 0) return;
+    if (x < 0 || y < 0 || x + w > LCD_H_RES || y + h > LCD_V_RES) return;
+    if (w * h > LCD_H_RES * GUI_BLOCK_LINES) return;
+    for (int i = 0; i < w * h; i++) {
+        render_buffer[i] = __builtin_bswap16(data[i]);
+    }
+    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, render_buffer);
+    vTaskDelay(pdMS_TO_TICKS(15));
+}
+
 // Kreslenie čiary pomocou Bresenhamovho algoritmu (pixel po pixeli)
 void gui_draw_line(int x0, int y0, int x1, int y1, uint16_t color) {
     int dx = abs(x1 - x0);
