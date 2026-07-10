@@ -12,14 +12,14 @@
 #include "weather_client.h"
 #include "wifi_scanner.h"
 
-void gui_draw_screen_system(GuiState& s, uint32_t now_ms) {
+static void gui_draw_system_page_status(GuiState& s, uint32_t now_ms) {
     (void)s;
     (void)now_ms;
 
     app_config_t* cfg = app_config_get();
     int sy = 30;
 
-    // Pravy stlpec: svetelny senzor (1. riadok)
+    // Pravy stlpec: svetelny senzor / jas
     float lt = 0.0f, lh = 0.0f, lp = 0.0f, lux = 0.0f;
     sensor_core_get_latest_full(&lt, &lh, &lp, &lux);
 
@@ -41,30 +41,6 @@ void gui_draw_screen_system(GuiState& s, uint32_t now_ms) {
                     THEME_BG, 1);
     gui_draw_string(sx, 90, "Aktualizacia: ~1s", COLOR_LIGHT_GRAY, THEME_BG,
                     1);
-
-    // --- ULOZISKO (LittleFS) - pravy stlpec, pod "Aktualizacia" ---
-    gui_draw_string(sx, 104, "ULOZISKO:", SYS_LABEL_FG, THEME_BG, 1);
-
-    size_t fs_total = 0, fs_used = 0;
-    storage_get_fs_info(&fs_total, &fs_used);
-
-    if (fs_total > 0) {
-        char fs_buf[32];
-        float used_kb = fs_used / 1024.0f;
-        float total_kb = fs_total / 1024.0f;
-        float used_pct = (fs_used * 100.0f) / fs_total;
-        snprintf(fs_buf, sizeof(fs_buf), "%.0f/%.0f KB (%.0f%%)", used_kb,
-                 total_kb, used_pct);
-        gui_draw_string(sx, 116, fs_buf, SYS_VALUE_FG, THEME_BG, 1);
-
-        // Minimalistický Progress bar
-        int bar_w = 140;
-        int fill_w = (int)(((float)fs_used / fs_total) * bar_w);
-        gui_draw_rect(sx, 128, bar_w, 8, STATUS_BORDER_FG);
-        if (fill_w > 0) gui_draw_rect(sx, 128, fill_w, 8, PROGRESS_FG);
-    } else {
-        gui_draw_string(sx, 116, "FS Error", SYS_WIFI_ERR_FG, THEME_BG, 1);
-    }
 
     gui_draw_string(10, sy, "ZARIADENIE:", SYS_LABEL_FG, THEME_BG, 1);
     gui_draw_string(10, sy + 12, cfg->alias, SYS_VALUE_FG, THEME_BG, 1);
@@ -106,4 +82,61 @@ void gui_draw_screen_system(GuiState& s, uint32_t now_ms) {
     snprintf(cal_info, sizeof(cal_info), "DHT: %+.1f | BMP: %+.1f",
              cfg->dht_temp_offset, cfg->bmp_temp_offset);
     gui_draw_string(10, sy + 12, cal_info, SYS_VALUE_FG, THEME_BG, 1);
+}
+
+static void gui_draw_system_page_storage(GuiState& s, uint32_t now_ms) {
+    (void)s;
+    (void)now_ms;
+
+    int sy = 30;
+
+    gui_draw_string(10, sy, "ULOZISKO (LittleFS):", SYS_LABEL_FG, THEME_BG,
+                    1);
+    size_t fs_total = 0, fs_used = 0;
+    storage_get_fs_info(&fs_total, &fs_used);
+
+    if (fs_total > 0) {
+        char fs_buf[32];
+        float used_kb = fs_used / 1024.0f;
+        float total_kb = fs_total / 1024.0f;
+        float used_pct = (fs_used * 100.0f) / fs_total;
+        snprintf(fs_buf, sizeof(fs_buf), "%.0f/%.0f KB (%.0f%%)", used_kb,
+                 total_kb, used_pct);
+        gui_draw_string(10, sy + 14, fs_buf, SYS_VALUE_FG, THEME_BG, 1);
+
+        int bar_w = 220;
+        int fill_w = (int)(((float)fs_used / fs_total) * bar_w);
+        gui_draw_rect(10, sy + 28, bar_w, 10, STATUS_BORDER_FG);
+        if (fill_w > 0) gui_draw_rect(10, sy + 28, fill_w, 10, PROGRESS_FG);
+    } else {
+        gui_draw_string(10, sy + 14, "FS Error", SYS_WIFI_ERR_FG, THEME_BG,
+                        1);
+    }
+    sy += 56;
+
+    gui_draw_string(10, sy, "ZAZNAMY - SENZOR:", SYS_LABEL_FG, THEME_BG, 1);
+    char sensor_count_buf[16];
+    snprintf(sensor_count_buf, sizeof(sensor_count_buf), "%d",
+             storage_get_sensor_record_count());
+    gui_draw_string(180, sy, sensor_count_buf, SYS_VALUE_FG, THEME_BG, 1);
+    sy += 20;
+
+    gui_draw_string(10, sy, "ZAZNAMY - POCASIE:", SYS_LABEL_FG, THEME_BG, 1);
+    char weather_count_buf[16];
+    snprintf(weather_count_buf, sizeof(weather_count_buf), "%d",
+             storage_get_weather_record_count());
+    gui_draw_string(180, sy, weather_count_buf, SYS_VALUE_FG, THEME_BG, 1);
+}
+
+// current_screen == 5 -> "SYSTEM" (stav zariadenia), == 6 -> "STORAGE"
+// (uloziskove/dátové štatistiky). Dve samostatné zastavky v hlavnej
+// rotacii obrazoviek (viz gui.cpp GUI_SCREEN_COUNT), nie stranky v ramci
+// jednej obrazovky - BOOT tlacidlo na fyzickom zariadeni nie je pohodlny
+// univerzalny "escape", tak sa nespoliehame na specialne UP/DOWN spravanie.
+void gui_draw_screen_system(GuiState& s, uint32_t now_ms) {
+    if (s.current_screen == 6) {
+        gui_draw_system_page_storage(s, now_ms);
+    } else {
+        gui_draw_system_page_status(s, now_ms);
+    }
 }

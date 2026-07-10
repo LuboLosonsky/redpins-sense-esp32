@@ -23,3 +23,8 @@ void wifi_scanner_get_ip(char* outBuffer, size_t maxLength);
 // Skúsi načítať uložené údaje z NVS a automaticky sa pripojiť (volané po
 // štarte)
 void wifi_scanner_auto_connect();
+
+// Zavolat pred esp_wifi_stop() (napr. pred MODE_LONG_LIFE deep sleep).
+// Potlačí auto-reconnect v event handleri, ktory by inak volal
+// esp_wifi_connect() sucasne s prebiehajucim vypinanim WiFi drivera.
+void wifi_scanner_prepare_shutdown(void);

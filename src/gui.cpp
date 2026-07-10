@@ -20,6 +20,7 @@
 #include "gui_screen_system.h"
 #include "gui_screen_weather.h"
 #include "gui_state.h"
+#include "power_manager.h"
 #include "sensor_core.h"
 #include "weather_icons.h"
 #include "wifi_scanner.h"
@@ -42,9 +43,15 @@ extern esp_lcd_panel_handle_t panel_handle;
 extern "C" void display_clear(uint16_t color);
 
 // --- STAVOVÝ AUTOMAT (Obrazovky / Options menu) ---
+// 7 obrazoviek v hlavnej rotacii: SYSTEM (5) a STORAGE (6) su dve
+// samostatne "zastavky" rotacie (predtym stranky v ramci jednej
+// obrazovky ovladane cez UP/DOWN - opustene, lebo BOOT tlacidlo nie je na
+// fyzickom zariadeni pohodlne dostupne ako univerzalny "escape").
+#define GUI_SCREEN_COUNT 7
+
 static int gui_get_option_count(int screen) {
     if (screen == 4) return 6;
-    if (screen == 5) return 4;
+    if (screen == 5 || screen == 6) return 6;
     return 1;
 }
 
@@ -55,7 +62,8 @@ static void gui_close_options_menu(GuiState& s) {
 }
 
 static void gui_open_options_menu(GuiState& s) {
-    if (s.current_screen == 4 || s.current_screen == 5) {
+    if (s.current_screen == 4 || s.current_screen == 5 ||
+        s.current_screen == 6) {
         s.is_in_options = true;
         s.selected_option_idx = 0;
         s.force_redraw = true;
@@ -76,7 +84,7 @@ static void gui_apply_selected_option(GuiState& s) {
         else if (s.selected_option_idx == 4)
             s.graph_flip_interval_ms = 30000;
         // idx 5 je Back (nic nerobime)
-    } else if (s.current_screen == 5) {
+    } else if (s.current_screen == 5 || s.current_screen == 6) {
         if (s.selected_option_idx == 0) {
             s.s_display_rotated = !s.s_display_rotated;
             esp_lcd_panel_mirror(panel_handle, !s.s_display_rotated,
@@ -88,22 +96,25 @@ static void gui_apply_selected_option(GuiState& s) {
                 !app_config_get()->auto_brightness;
             app_config_save();
         } else if (s.selected_option_idx == 2) {
-            app_config_get()->auto_brightness = false;
-            app_config_save();
-            display_hal_set_backlight_percent(10);
+            power_manager_set_mode(MODE_PERFORMANCE);
+        } else if (s.selected_option_idx == 3) {
+            power_manager_set_mode(MODE_BALANCED);
+        } else if (s.selected_option_idx == 4) {
+            power_manager_set_mode(MODE_LONG_LIFE);
         }
-        // idx 3 je Back (nic nerobime)
+        // idx 5 je Back (nic nerobime)
     }
 }
 
 static void gui_next_screen(GuiState& s) {
-    s.current_screen = (s.current_screen + 1) % 6;
+    s.current_screen = (s.current_screen + 1) % GUI_SCREEN_COUNT;
     s.force_redraw = true;
     display_clear(THEME_BG);
 }
 
 static void gui_prev_screen(GuiState& s) {
-    s.current_screen = (s.current_screen + 5) % 6;
+    s.current_screen =
+        (s.current_screen + GUI_SCREEN_COUNT - 1) % GUI_SCREEN_COUNT;
     s.force_redraw = true;
     display_clear(THEME_BG);
 }
@@ -152,28 +163,47 @@ extern "C" void gui_task(void* arg) {
     esp_lcd_panel_mirror(panel_handle, !s.s_display_rotated,
                          !s.s_display_rotated);
 
-    // --- 1. BOOT SEQUENCE (Tvoj vysnívaný start-up log) ---
+    // DOCASNY DIAGNOSTICKY MARKER (odstranit po vyladeni MODE_LONG_LIFE):
+    // vypise sa VZDY, aj pri fast-wake, aby bolo na displeji vizuálne
+    // vidiet, ci k realnemu restartu cipu vobec doslo. Tento bod v kode sa
+    // teraz dosiahne LEN pri studenom boote alebo pri fast-wake so
+    // skutocne drzanym tlacidlom (rutinne periodicke wake bez tlacidla sa
+    // vybavi este pred display_hal_init(), viz power_manager_handle_
+    // long_life_wake).
     display_clear(THEME_BG);
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    gui_draw_string(5, 10, "REDPINS OS", BOOT_TITLE_FG, THEME_BG, 2);
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    gui_draw_string(5, 40, "Starting system...", BOOT_TEXT_FG, THEME_BG, 1);
-    vTaskDelay(pdMS_TO_TICKS(400));
-
-    gui_draw_string(5, 55, "Bluetooth ... OK", BOOT_OK_FG, THEME_BG, 1);
-    vTaskDelay(pdMS_TO_TICKS(400));
-
-    gui_draw_string(5, 70, "WiFi ........ OK", BOOT_OK_FG, THEME_BG, 1);
-    vTaskDelay(pdMS_TO_TICKS(400));
-
-    bool weather_sensor_ok = sensor_core_weather_sensor_ok();
     gui_draw_string(
-        5, 85,
-        weather_sensor_ok ? "Weather senzor .. OK" : "Weather senzor .. FAIL",
-        weather_sensor_ok ? BOOT_OK_FG : SYS_WIFI_ERR_FG, THEME_BG, 1);
-    vTaskDelay(pdMS_TO_TICKS(1500));  // Necháme používateľa chvíľu sa pokochať
+        5, 10, power_manager_is_fast_wake() ? "FAST WAKE" : "COLD BOOT",
+        BOOT_TITLE_FG, THEME_BG, 2);
+    vTaskDelay(pdMS_TO_TICKS(800));
+
+    // --- 1. BOOT SEQUENCE (Tvoj vysnívaný start-up log) ---
+    // Preskocene pri fast-wake z MODE_LONG_LIFE - zariadenie sa ma rozsvietit
+    // na interakciu okamzite, bez animacie a bez BLE/WiFi hlasenia (tie sa
+    // ani v tomto pripade nespustaju, viz main.cpp).
+    if (!power_manager_is_fast_wake()) {
+        display_clear(THEME_BG);
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        gui_draw_string(5, 10, "REDPINS OS", BOOT_TITLE_FG, THEME_BG, 2);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        gui_draw_string(5, 40, "Starting system...", BOOT_TEXT_FG, THEME_BG, 1);
+        vTaskDelay(pdMS_TO_TICKS(400));
+
+        gui_draw_string(5, 55, "Bluetooth ... OK", BOOT_OK_FG, THEME_BG, 1);
+        vTaskDelay(pdMS_TO_TICKS(400));
+
+        gui_draw_string(5, 70, "WiFi ........ OK", BOOT_OK_FG, THEME_BG, 1);
+        vTaskDelay(pdMS_TO_TICKS(400));
+
+        bool weather_sensor_ok = sensor_core_weather_sensor_ok();
+        gui_draw_string(5, 85,
+                        weather_sensor_ok ? "Weather senzor .. OK"
+                                         : "Weather senzor .. FAIL",
+                        weather_sensor_ok ? BOOT_OK_FG : SYS_WIFI_ERR_FG,
+                        THEME_BG, 1);
+        vTaskDelay(pdMS_TO_TICKS(1500));  // Necháme používateľa chvíľu sa pokochať
+    }
 
     display_clear(THEME_BG);
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -286,6 +316,7 @@ extern "C" void gui_task(void* arg) {
             btn_press_time = now_ms;
             btn_long_pressed = false;
             BTN_LOGI("BTN BOOT DOWN");
+            power_manager_notify_activity();
         }
 
         // Dlhé stlačenie (800ms)
@@ -326,6 +357,7 @@ extern "C" void gui_task(void* arg) {
         if (ok_state == 0 && ok_last_state == 1) {
             ok_press_time = now_ms;
             BTN_LOGI("BTN OK DOWN");
+            power_manager_notify_activity();
             if ((now_ms - ok_last_event_ms) > 80) {
                 if (s.is_in_options) {
                     BTN_LOGI("BTN OK ACTION: confirm option");
@@ -348,6 +380,7 @@ extern "C" void gui_task(void* arg) {
         if (esc_state == 0 && esc_last_state == 1) {
             esc_press_time = now_ms;
             BTN_LOGI("BTN ESC DOWN");
+            power_manager_notify_activity();
             if ((now_ms - esc_last_event_ms) > 80) {
                 if (s.is_in_options) {
                     BTN_LOGI("BTN ESC ACTION: cancel options");
@@ -366,6 +399,7 @@ extern "C" void gui_task(void* arg) {
         if (up_state == 0 && up_last_state == 1) {
             up_press_time = now_ms;
             BTN_LOGI("BTN UP DOWN");
+            power_manager_notify_activity();
             if ((now_ms - up_last_event_ms) > 80) {
                 if (s.is_in_options) {
                     BTN_LOGI("BTN UP ACTION: prev option");
@@ -387,6 +421,7 @@ extern "C" void gui_task(void* arg) {
         if (down_state == 0 && down_last_state == 1) {
             down_press_time = now_ms;
             BTN_LOGI("BTN DOWN DOWN");
+            power_manager_notify_activity();
             if ((now_ms - down_last_event_ms) > 80) {
                 if (s.is_in_options) {
                     BTN_LOGI("BTN DOWN ACTION: next option");
@@ -403,9 +438,12 @@ extern "C" void gui_task(void* arg) {
         }
         down_last_state = down_state;
 
+        power_manager_tick();
+
         // Settings potrebuje sviznejsi refresh pre live lux hodnotu.
         uint32_t redraw_period_ms = 2000;
-        if (!s.is_in_options && s.current_screen == 5) {
+        if (!s.is_in_options &&
+            (s.current_screen == 5 || s.current_screen == 6)) {
             redraw_period_ms = 1000;
         }
 
@@ -439,9 +477,9 @@ extern "C" void gui_task(void* arg) {
 
             // Názov aktuálnej obrazovky (Zarovnaný doľava s paddingom na 12
             // znakov pre automatické vymazanie)
-            const char* screen_titles[] = {"COMPARE",     "SENSORS",
-                                           "WEATHER",     "ATMOSPHERE",
-                                           "TEMPERATURE", "SYSTEM"};
+            const char* screen_titles[] = {
+                "COMPARE",     "SENSORS", "WEATHER", "ATMOSPHERE",
+                "TEMPERATURE", "SYSTEM",  "STORAGE"};
             char title_buf[16];
             if (s.is_in_options) {
                 snprintf(title_buf, sizeof(title_buf), "%-12s", "OPTIONS");
@@ -483,7 +521,9 @@ extern "C" void gui_task(void* arg) {
                 char opt_auto_bri[24];
                 snprintf(opt_auto_bri, sizeof(opt_auto_bri), "Auto jas: %s",
                          app_config_get()->auto_brightness ? "ON" : "OFF");
-                const char* opt_sys[] = {"Otocit o 180", opt_auto_bri, "Jas: 10% test", "Back"};
+                const char* opt_sys[] = {"Otocit o 180",   opt_auto_bri,
+                                         "Performance",    "Balanced (Eco)",
+                                         "Long Life",      "Back"};
                 const char* opt_default[] = {"Back"};
 
                 const char** options = opt_default;
@@ -492,9 +532,9 @@ extern "C" void gui_task(void* arg) {
                 if (s.current_screen == 4) {
                     options = opt_graph;
                     count = 6;
-                } else if (s.current_screen == 5) {
+                } else if (s.current_screen == 5 || s.current_screen == 6) {
                     options = opt_sys;
-                    count = 4;
+                    count = 6;
                 }
 
                 for (int i = 0; i < count; i++) {
@@ -527,8 +567,11 @@ extern "C" void gui_task(void* arg) {
                 }
 
                 // Adaptivny jas displeja (smartfonovy styl, s plynulym
-                // filtrom). Bezi nezavisle od vybratej obrazovky.
-                if (app_config_get()->auto_brightness &&
+                // filtrom). Bezi nezavisle od vybratej obrazovky, ale len
+                // v MODE_PERFORMANCE - inak by sposoboval konflikt s
+                // power_manager-om o riadenie tej istej LEDC zbernice.
+                if (power_manager_get_mode() == MODE_PERFORMANCE &&
+                    app_config_get()->auto_brightness &&
                     (now_ms - s.last_brightness_update_ms) >= 1000) {
                     float t_cur = 0.0f, h_cur = 0.0f, p_cur = 0.0f,
                           lux_cur = 0.0f;
@@ -562,8 +605,8 @@ extern "C" void gui_task(void* arg) {
                 if (s.current_screen == 3) {
                     gui_draw_screen_atmosphere(s, now_ms);
                 }
-                // --- OBRAZOVKA 5: Systém a Nastavenia ---
-                else if (s.current_screen == 5) {
+                // --- OBRAZOVKA 5/6: Systém a Nastavenia / Úložisko ---
+                else if (s.current_screen == 5 || s.current_screen == 6) {
                     gui_draw_screen_system(s, now_ms);
                 }
                 // --- OBRAZOVKA 4: Graf teploty zo senzora (24h) ---

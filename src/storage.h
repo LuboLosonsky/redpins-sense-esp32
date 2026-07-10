@@ -34,3 +34,9 @@ void storage_get_fs_info(size_t* total, size_t* used);
 
 // Vráti: 1 (Stúpa), -1 (Klesá), 0 (Stabilný), -2 (Málo dát pre výpočet)
 int storage_get_pressure_trend();
+
+// Počet záznamov (bez hlavičky) aktuálne v sensor.csv / weather.csv.
+// Počítané raz pri storage_init(), potom udržiavané inkrementálne pri
+// každom zápise/rotácii - lacné volanie, netreba znova čítať súbor.
+int storage_get_sensor_record_count(void);
+int storage_get_weather_record_count(void);

@@ -19,6 +19,7 @@
 #include "nimble/nimble_port_freertos.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "power_manager.h"
 #include "sensor_core.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
@@ -265,7 +266,11 @@ static int ble_svc_command_write(uint16_t conn_handle, uint16_t attr_handle,
                 break;
             case 0x03:  // DEEP_SLEEP
                 ESP_LOGI(TAG, "Príkaz: DEEP_SLEEP (0x03).");
-                esp_deep_sleep_start();
+                // Zanshin fix: povodne tu bol holy esp_deep_sleep_start() bez
+                // nastaveneho wake source (prebudenie len cez EN/reset) - teraz
+                // ide cez power_manager, ktory vyzbroji ext1 wakeup na
+                // tlacidlach OK/ESC/UP/DOWN pred spankom.
+                power_manager_force_long_life_sleep();
                 break;
             case 0x04:  // SYS_INFO
                 ESP_LOGI(

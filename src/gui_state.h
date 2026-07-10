@@ -15,7 +15,7 @@
 // v gui_task, lebo ho nečíta žiadna obrazovka.
 struct GuiState {
     // --- Navigácia / stavový automat ---
-    int current_screen;          // 0..5, index obrazovky
+    int current_screen;          // 0..6, index obrazovky (5=SYSTEM, 6=STORAGE)
     bool is_in_options;          // je otvorené options menu?
     int selected_option_idx;     // kurzor v options menu
     int graph_range_days;        // 1 / 3 / 7 (možnosť na obrazovke GRAPH)

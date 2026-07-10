@@ -24,6 +24,31 @@ static int s_trend_buffer[TREND_MAX_SAMPLES];
 static int s_trend_idx = 0;
 static int s_trend_count = 0;
 
+// Pocet zaznamov v CSV (bez hlavicky) - pocitane raz pri starte, potom
+// inkrementalne aktualizovane pri kazdom zapise/rotacii. Zobrazuje sa na
+// obrazovke SYSTEM, aby bolo vidiet ci lokalne aj weather logovanie realne
+// bezi.
+static int s_sensor_record_count = 0;
+static int s_weather_record_count = 0;
+
+static int count_csv_records(const char* path) {
+    FILE* f = fopen(path, "r");
+    if (!f) return 0;
+
+    char line_buf[64];
+    int count = 0;
+    bool skipped_header = false;
+    while (fgets(line_buf, sizeof(line_buf), f)) {
+        if (!skipped_header) {
+            skipped_header = true;
+            continue;
+        }
+        if (line_buf[0] != '\0' && line_buf[0] != '\n') count++;
+    }
+    fclose(f);
+    return count;
+}
+
 static void prefill_trend_buffer() {
     FILE* f = fopen("/data/sensor.csv", "r");
     if (!f) return;
@@ -124,6 +149,11 @@ esp_err_t storage_init() {
                 fclose(fw);
             }
         }
+
+        s_sensor_record_count = count_csv_records("/data/sensor.csv");
+        s_weather_record_count = count_csv_records("/data/weather.csv");
+        ESP_LOGI(TAG, "Zaznamy pri starte: sensor=%d weather=%d",
+                 s_sensor_record_count, s_weather_record_count);
     }
 
     prefill_trend_buffer();
@@ -358,6 +388,16 @@ static void storage_rotate_log_if_needed(const char* filename) {
         // D: Sme v bezpečí, ostrý súbor existuje. Zmažeme zálohu.
         remove(old_filename);
 
+        // Korekcia pocitadla zaznamov (rotacia zahodila lines_to_skip
+        // najstarsich riadkov) - podla nazvu suboru vieme, ktore pocitadlo
+        // upravit bez opatovneho prehladavania celeho suboru.
+        int new_count = total_lines - lines_to_skip;
+        if (strcmp(filename, "/data/sensor.csv") == 0) {
+            s_sensor_record_count = new_count;
+        } else if (strcmp(filename, "/data/weather.csv") == 0) {
+            s_weather_record_count = new_count;
+        }
+
         ESP_LOGI(TAG, "Rotácia logu %s úspešne dokončená (Fail-Safe flow).",
                  filename);
     }
@@ -370,6 +410,7 @@ void storage_log_sensor_data(uint32_t timestamp, float t, float h, float p) {
         // Formátovanie striktne podľa CsvStructure.md (tlak ako int)
         fprintf(f, "%lu;%.1f;%.1f;%d\n", timestamp, t, h, (int)p);
         fclose(f);
+        s_sensor_record_count++;
     }
 
     // Aktualizácia trend buffra v RAM
@@ -385,8 +426,13 @@ void storage_log_weather_data(uint32_t timestamp, const char* city, float t,
     if (f) {
         fprintf(f, "%lu;%s;%.1f;%d;%d\n", timestamp, city ? city : "", t, h, p);
         fclose(f);
+        s_weather_record_count++;
     }
 }
+
+int storage_get_sensor_record_count(void) { return s_sensor_record_count; }
+
+int storage_get_weather_record_count(void) { return s_weather_record_count; }
 
 int storage_get_temperature_history(uint32_t since_timestamp, float* temp_array,
                                     int max_count) {

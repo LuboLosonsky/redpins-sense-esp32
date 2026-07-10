@@ -13,6 +13,7 @@
 static const char* TAG = "DISP_HAL";
 
 esp_lcd_panel_handle_t panel_handle = NULL;
+static esp_lcd_panel_io_handle_t s_io_handle = NULL;
 static bool s_backlight_ready = false;
 static uint8_t s_backlight_percent = 31;
 
@@ -58,7 +59,6 @@ esp_err_t display_hal_init(void) {
     vTaskDelay(pdMS_TO_TICKS(10));
 
     ESP_LOGI(TAG, "Pripojenie LCD k SPI zbernici (ST7789)");
-    esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_spi_config_t io_config = {};
     io_config.dc_gpio_num = WS_DC;
     io_config.cs_gpio_num = WS_CS;
@@ -69,7 +69,7 @@ esp_err_t display_hal_init(void) {
     io_config.trans_queue_depth = 10;
 
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(
-        (esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &io_handle));
+        (esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_config, &s_io_handle));
 
     ESP_LOGI(TAG, "Inštalácia ovládača ST7789");
     esp_lcd_panel_dev_config_t panel_config = {};
@@ -78,35 +78,35 @@ esp_err_t display_hal_init(void) {
     panel_config.bits_per_pixel = 16;
 
     ESP_ERROR_CHECK(
-        esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
+        esp_lcd_new_panel_st7789(s_io_handle, &panel_config, &panel_handle));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
 
     // --- ZANSHIN FIX: Vernon ST7789T Magické registre ---
     ESP_LOGI(TAG, "Odosielam Vernon ST7789T power/gamma registre...");
-    esp_lcd_panel_io_tx_param(io_handle, 0xB0, (uint8_t[]){0x00, 0xE8}, 2);
-    esp_lcd_panel_io_tx_param(io_handle, 0xB2,
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xB0, (uint8_t[]){0x00, 0xE8}, 2);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xB2,
                               (uint8_t[]){0x0C, 0x0C, 0x00, 0x33, 0x33}, 5);
-    esp_lcd_panel_io_tx_param(io_handle, 0xB7, (uint8_t[]){0x75}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xBB, (uint8_t[]){0x1A}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xC0, (uint8_t[]){0x80}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xC2, (uint8_t[]){0x01, 0xFF}, 2);
-    esp_lcd_panel_io_tx_param(io_handle, 0xC3, (uint8_t[]){0x13}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xC4, (uint8_t[]){0x20}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xC6, (uint8_t[]){0x0F}, 1);
-    esp_lcd_panel_io_tx_param(io_handle, 0xD0, (uint8_t[]){0xA4, 0xA1}, 2);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xB7, (uint8_t[]){0x75}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xBB, (uint8_t[]){0x1A}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC0, (uint8_t[]){0x80}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC2, (uint8_t[]){0x01, 0xFF}, 2);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC3, (uint8_t[]){0x13}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC4, (uint8_t[]){0x20}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC6, (uint8_t[]){0x0F}, 1);
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xD0, (uint8_t[]){0xA4, 0xA1}, 2);
     esp_lcd_panel_io_tx_param(
-        io_handle, 0xE0,
+        s_io_handle, 0xE0,
         (uint8_t[]){0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38, 0x44, 0x4E, 0x3A,
                     0x17, 0x18, 0x2F, 0x30},
         14);
     esp_lcd_panel_io_tx_param(
-        io_handle, 0xE1,
+        s_io_handle, 0xE1,
         (uint8_t[]){0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37, 0x44, 0x4D, 0x38,
                     0x15, 0x16, 0x2C, 0x2E},
         14);
-    esp_lcd_panel_io_tx_param(io_handle, 0x21, NULL,
+    esp_lcd_panel_io_tx_param(s_io_handle, 0x21, NULL,
                               0);  // INVON (Invert color hardvérovo)
     // ---------------------------------------------------
 
@@ -166,6 +166,25 @@ void display_hal_set_backlight_percent(uint8_t percent) {
 }
 
 uint8_t display_hal_get_backlight_percent(void) { return s_backlight_percent; }
+
+// MODE_BALANCED: znizenie obnovovacej frekvencie ST7789 na ~30Hz priamym
+// zapisom do FRCTRL2 (0xC6), aby sa odlahcil interny oscilator displeja.
+// eco=false obnovi povodnu hodnotu z "Vernon" inicializacnej sekvencie.
+void display_hal_set_eco_framerate(bool eco) {
+    if (!s_io_handle) return;
+    uint8_t frctrl2 = eco ? 0x1F : 0x0F;
+    esp_lcd_panel_io_tx_param(s_io_handle, 0xC6, &frctrl2, 1);
+}
+
+// MODE_LONG_LIFE: pred esp_deep_sleep_start() posle do ST7789 DISPOFF a
+// SLPIN, aby panel neodoberal prud pocas hlbokeho spanku. Displej sa po
+// prebudeni (studenom starte aj fast-wake) reinicializuje nanovo v
+// display_hal_init(), takze netreba explicitny "wake" pandant.
+void display_hal_enter_display_sleep(void) {
+    if (!s_io_handle) return;
+    esp_lcd_panel_io_tx_param(s_io_handle, 0x28, NULL, 0);  // DISPOFF
+    esp_lcd_panel_io_tx_param(s_io_handle, 0x10, NULL, 0);  // SLPIN
+}
 
 // Zanshin: Globálna funkcia na vymazanie/výplň obrazovky (vyžadovaná pre
 // gui_task)

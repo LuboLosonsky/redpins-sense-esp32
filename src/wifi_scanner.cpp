@@ -21,12 +21,20 @@ static bool wifi_initialized = false;
 static int wifi_retry_count = 0;
 static bool s_is_connected = false;
 static char s_ip_address[16] = "";
+static bool s_shutting_down = false;
 
 // --- Asynchrónny Event Handler pre Wi-Fi ---
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         s_is_connected = false;
+
+        // Zanshin fix: esp_wifi_stop() (napr. pred deep sleep) sam vyvola
+        // tento disconnect event. Bez tejto poistky by sme tu zavolali
+        // esp_wifi_connect() sucasne s prebiehajucim esp_wifi_stop() z
+        // ineho tasku - nedefinovany stav WiFi drivera.
+        if (s_shutting_down) return;
+
         if (wifi_retry_count < 3) {
             wifi_retry_count++;
             ESP_LOGW(TAG,
@@ -289,3 +297,5 @@ void wifi_scanner_get_ip(char* outBuffer, size_t maxLength) {
         outBuffer[0] = '\0';
     }
 }
+
+void wifi_scanner_prepare_shutdown(void) { s_shutting_down = true; }

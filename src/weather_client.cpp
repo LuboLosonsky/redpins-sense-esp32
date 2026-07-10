@@ -494,3 +494,5 @@ void weather_client_init(void) {
     // Štart Tasku - priorita 3 (Dátové prenosy sú pod displejom a nad senzormi)
     xTaskCreate(weather_fetch_task, "weather_task", 4096, NULL, 3, NULL);
 }
+
+void weather_client_load_last_known(void) { weather_load_cache(); }

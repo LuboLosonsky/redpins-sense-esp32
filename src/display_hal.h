@@ -26,3 +26,10 @@ void display_hal_set_backlight_percent(uint8_t percent);
 
 // Vrati aktualny jas podsvietenia v percentach (0-100).
 uint8_t display_hal_get_backlight_percent(void);
+
+// MODE_BALANCED: znizi (eco=true) alebo obnovi (eco=false) obnovovaciu
+// frekvenciu ST7789 zapisom do registra FRCTRL2 (0xC6).
+void display_hal_set_eco_framerate(bool eco);
+
+// MODE_LONG_LIFE: posle DISPOFF + SLPIN pred esp_deep_sleep_start().
+void display_hal_enter_display_sleep(void);
