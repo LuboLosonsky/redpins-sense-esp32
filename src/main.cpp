@@ -132,7 +132,9 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "========== REDPINS SENSE INIT ZACINA ==============");
     ESP_LOGI(TAG, "=====================================================");
 
-    // GPIO8 je vyhradeny pre I2C SDA, preto ho nepouzivame ako vystup pre LED.
+    // Zanshin oprava: predoslý komentár tu tvrdil, že GPIO8 je vyhradený
+    // pre I2C SDA - nepravda, realne I2C piny su GPIO0/1 (sensor_core.cpp).
+    // GPIO8 je volny a od teraz ho pouziva RGB LED (rgb_led.cpp).
 
     // 2. Mount LittleFS pre perzistenciu (config.json, CSV logy)
     if (storage_init() != ESP_OK) {

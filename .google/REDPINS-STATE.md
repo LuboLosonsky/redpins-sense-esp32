@@ -112,3 +112,23 @@ Fáza: ESP32 Firmware (Sense) - Pridaná obrazovka COMPARE + Refaktoring gui.cpp
 - DÔLEŽITÉ pre budúce zmeny: `src/CMakeLists.txt` má EXPLICITNÝ zoznam SRCS, nie glob - nový .cpp súbor sa musí pridať manuálne, inak sa ticho nepreloží.
 - Refaktoring robený postupne po krokoch (extrakcia primitives → helpers → GuiState in-place → SYSTEM → WEATHER → ATMOSPHERE → COMPARE → SENSORS → GRAPH → cleanup), s build+flash+smoke-test po každom kroku. Žiadna funkčná zmena, čisto štrukturálne. Užívateľ overil každý krok na fyzickom zariadení.
 [/UPDATE-REDPINS-STATE]
+
+[UPDATE-REDPINS-STATE]
+Dátum: 2026-07-10 (Claude Code session)
+Fáza: ESP32 Firmware (Sense) - Napájacie profily (power_manager) + RGB LED indikátor
+
+1. Nový modul `power_manager.h/.cpp` - 3 napájacie profily perzistentné v NVS (`power_cfg`/`power_mode`), prepínateľné cez Settings options menu:
+   - **MODE_PERFORMANCE** - plný jas/refresh, žiadne úspory (predvolené).
+   - **MODE_BALANCED** - trvalo 5% jas + znížený ST7789 refresh (`display_hal_set_eco_framerate`, register FRCTRL2 0xC6), diferenciálna detekcia tieňa na LDR (BH1750) → 60s dočasný plný výkon pri pohybe/tlačidle.
+   - **MODE_LONG_LIFE** - skutočný `esp_deep_sleep_start()`. Pôvodný `ext1` GPIO-wake na tlačidlách bol **zahodený** - interný weak pull-up (~45kΩ) sa ukázal nespoľahlivý voči šumu na tlačidlových vedeniach (opakovane falošné prebudenia na rôznych pinoch, cca každé 2s). Nahradené **timer-wake** (`esp_sleep_enable_timer_wakeup`, 500ms) - zariadenie sa potichu prebudí, digitálne skontroluje tlačidlá, a ak nič nie je stlačené, ihneď zaspí bez zapnutia displeja/BLE/WiFi.
+   - Long Life periodicky loguje dáta aj bez stlačenia tlačidla (`long_life_maintenance_cycle()` v main.cpp, `RTC_DATA_ATTR` časové značky prežívajúce deep sleep): lokálny senzor každých 10 min (bez WiFi), weather API fetch raz za hodinu (WiFi pripojenie je drahé, preto zriedkavejšie než bežných 20 min).
+   - Fast-wake (návrat z Long Life so stlačeným tlačidlom) preskakuje BLE/WiFi/weather/boot animáciu aj 3s COM-port delay pre rýchlu reakciu.
+   - Oprava reálneho race condition: `esp_wifi_stop()` pred spánkom vyvolával disconnect event, na ktorý `wifi_scanner`-ov handler reagoval `esp_wifi_connect()` z iného FreeRTOS tasku súčasne s vypínaním - pridaný `wifi_scanner_prepare_shutdown()` guard.
+   - Oprava BLE príkazu `0x03 DEEP_SLEEP` - pôvodne bez akéhokoľvek wake source (len EN/reset budil zariadenie), teraz ide cez `power_manager_force_long_life_sleep()`.
+
+2. RGB LED indikátor (`rgb_led.h/.cpp`) - WS2812 na GPIO8 cez `espressif/led_strip` (RMT). GPIO8 bol napriek staršiemu (nesprávnemu) komentáru v `main.cpp` voľný. Farba podľa profilu: Performance=modrá, Balanced=tlmená jantárová, Long Life=zhasnutá (šetrí energiu). Jas nastaviteľný 0-100% cez Settings ("LED jas", cykluje 100/60/30%), perzistovaný v `config.json` (`led_bri`).
+
+3. GUI: SYSTEM obrazovka rozdelená na dve samostatné obrazovky v hlavnej rotácii (7 namiesto 6) - **SYSTEM** (stav/WiFi/GPS/kalibrácia) a **STORAGE** (LittleFS + počet záznamov v sensor.csv/weather.csv, `storage_get_sensor_record_count()`/`_weather_record_count()`). Pôvodný pokus s UP/DOWN stránkovaním v rámci jednej obrazovky zahodený - BOOT tlačidlo (jediný "escape") nie je na fyzickej doske pohodlne dostupné. Options menu teraz podporuje posuvné okno (max 6 riadkov, auto-scroll podľa fokusu) pre zoznamy s viac položkami.
+
+4. Známy nevyriešený nedostatok (nie kritický, mimo dnešného scope): `sensor_core.cpp`'s logovací plánovač (`tm_min % 10 == 0`) nemá "prvý beh po štarte = loguj hneď" poistku akú má `weather_client.cpp` (`last_fetch_min == -1 ||`) - pri veľmi častých reštartoch (ako počas dnešného testovania) môže sensor.csv zaostávať za weather.csv v počte záznamov. Long Life maintenance cyklus (bod 1) toto obchádza vlastným RTC-perzistovaným trackingom, ale bežný `sensor_task` v Performance/Balanced móde tento nedostatok stále má.
+[/UPDATE-REDPINS-STATE]

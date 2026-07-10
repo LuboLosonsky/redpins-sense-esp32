@@ -1,5 +1,6 @@
 #include "power_manager.h"
 
+#include "app_config.h"
 #include "display_hal.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -8,6 +9,7 @@
 #include "esp_wifi.h"
 #include "gui_state.h"  // BTN_OK_PIN/BTN_ESC_PIN/BTN_UP_PIN/BTN_DOWN_PIN
 #include "nvs.h"
+#include "rgb_led.h"
 #include "sensor_core.h"
 #include "wifi_scanner.h"
 
@@ -128,6 +130,7 @@ static void enter_long_life_sleep(void) {
 
     display_hal_set_backlight_percent(0);
     display_hal_enter_display_sleep();
+    rgb_led_off();  // Bezpecny no-op ak LED tento boot vobec neinicializovala
 
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
     esp_sleep_enable_timer_wakeup((uint64_t)POWER_LONG_LIFE_POLL_INTERVAL_MS *
@@ -183,6 +186,10 @@ bool power_manager_check_button_wake(void) {
 void power_manager_on_display_ready(void) {
     power_manager_apply_display_for_mode(s_mode);
 
+    rgb_led_init();
+    rgb_led_set_brightness_percent(app_config_get()->led_brightness_percent);
+    rgb_led_set_mode_indicator(s_mode);
+
     // MODE_LONG_LIFE: aj pri fast-wake, aj pri studenom starte s ulozenym
     // Long Life rezimom, potrebujeme vyzbrojit okno predtym, nez sa znova
     // zacne uvazovat o spanku (inak by prve tick() vyhodnotenie s
@@ -211,6 +218,7 @@ void power_manager_set_mode(PowerMode mode) {
     }
 
     power_manager_apply_display_for_mode(mode);
+    rgb_led_set_mode_indicator(mode);
 
     // MODE_LONG_LIFE: neuspavame okamzite z menu (prekvapilo by pouzivatela
     // uprostred navigacie) - vyzbrojime rovnake 60s okno ako pri prebudeni.

@@ -12,7 +12,10 @@
       "Bash(powershell -NoProfile -Command 'foreach \\($p in 14276,42872,37448,11728\\) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 500; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '\\\\''device monitor|pio\\\\.exe'\\\\'' } | Select-Object ProcessId, Name')",
       "PowerShell(& \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 20)",
       "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '\\\\''device monitor'\\\\'' } | Select-Object ProcessId,Name')",
-      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '\\\\''device monitor'\\\\'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }')"
+      "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '\\\\''device monitor'\\\\'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }')",
+      "PowerShell(& \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 50)",
+      "PowerShell(& \"$env:USERPROFILE\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe\" run 2>&1 | Select-Object -Last 25)",
+      "Read(//c/Users/lubo/.claude/projects/c--Users-lubo-Documents-PlatformIO-Projects-redpins-sense-esp32/memory/**)"
     ]
   }
 }

@@ -21,6 +21,7 @@
 #include "gui_screen_weather.h"
 #include "gui_state.h"
 #include "power_manager.h"
+#include "rgb_led.h"
 #include "sensor_core.h"
 #include "weather_icons.h"
 #include "wifi_scanner.h"
@@ -49,9 +50,20 @@ extern "C" void display_clear(uint16_t color);
 // fyzickom zariadeni pohodlne dostupne ako univerzalny "escape").
 #define GUI_SCREEN_COUNT 7
 
+// Options menu: posuvne okno, ak zoznam ma viac polozok nez sa zmesti.
+#define OPTIONS_VISIBLE_COUNT 6
+#define OPTIONS_ROW_H 24
+#define OPTIONS_LIST_Y 30
+// Sirka riadku MUSI pokryt aj najdlhsi label (napr. "Balanced (Eco)" = 14
+// znakov * 8 * scale(2) = 224px) - gui_draw_string cisti len presnu sirku
+// textu, nie cely riadok, takze uzsi rect by za kratsim nasledujucim
+// labelom nechaval zvysky starsieho dlhsieho textu.
+#define OPTIONS_ROW_W 290
+#define OPTIONS_INDICATOR_X 305
+
 static int gui_get_option_count(int screen) {
     if (screen == 4) return 6;
-    if (screen == 5 || screen == 6) return 6;
+    if (screen == 5 || screen == 6) return 7;
     return 1;
 }
 
@@ -96,13 +108,20 @@ static void gui_apply_selected_option(GuiState& s) {
                 !app_config_get()->auto_brightness;
             app_config_save();
         } else if (s.selected_option_idx == 2) {
-            power_manager_set_mode(MODE_PERFORMANCE);
+            // Cyklovanie jasu LED: 100% -> 60% -> 30% -> 100% ...
+            uint8_t cur = rgb_led_get_brightness_percent();
+            uint8_t next = (cur > 60) ? 60 : (cur > 30) ? 30 : 100;
+            rgb_led_set_brightness_percent(next);
+            app_config_get()->led_brightness_percent = next;
+            app_config_save();
         } else if (s.selected_option_idx == 3) {
-            power_manager_set_mode(MODE_BALANCED);
+            power_manager_set_mode(MODE_PERFORMANCE);
         } else if (s.selected_option_idx == 4) {
+            power_manager_set_mode(MODE_BALANCED);
+        } else if (s.selected_option_idx == 5) {
             power_manager_set_mode(MODE_LONG_LIFE);
         }
-        // idx 5 je Back (nic nerobime)
+        // idx 6 je Back (nic nerobime)
     }
 }
 
@@ -521,9 +540,13 @@ extern "C" void gui_task(void* arg) {
                 char opt_auto_bri[24];
                 snprintf(opt_auto_bri, sizeof(opt_auto_bri), "Auto jas: %s",
                          app_config_get()->auto_brightness ? "ON" : "OFF");
+                char opt_led_bri[24];
+                snprintf(opt_led_bri, sizeof(opt_led_bri), "LED jas: %u%%",
+                         rgb_led_get_brightness_percent());
                 const char* opt_sys[] = {"Otocit o 180",   opt_auto_bri,
-                                         "Performance",    "Balanced (Eco)",
-                                         "Long Life",      "Back"};
+                                         opt_led_bri,      "Performance",
+                                         "Balanced (Eco)", "Long Life",
+                                         "Back"};
                 const char* opt_default[] = {"Back"};
 
                 const char** options = opt_default;
@@ -534,10 +557,25 @@ extern "C" void gui_task(void* arg) {
                     count = 6;
                 } else if (s.current_screen == 5 || s.current_screen == 6) {
                     options = opt_sys;
-                    count = 6;
+                    count = 7;
                 }
 
-                for (int i = 0; i < count; i++) {
+                // Posuvne okno - max OPTIONS_VISIBLE_COUNT riadkov naraz.
+                // "start" sa pocita znova kazdy redraw priamo z fokusu,
+                // takze pri pohybe kurzora sa cely list plynulo posunie a
+                // fokusovana polozka zostane vzdy viditelna.
+                int visible_count =
+                    (count < OPTIONS_VISIBLE_COUNT) ? count : OPTIONS_VISIBLE_COUNT;
+                int start = 0;
+                if (count > OPTIONS_VISIBLE_COUNT) {
+                    start = s.selected_option_idx - OPTIONS_VISIBLE_COUNT / 2;
+                    if (start < 0) start = 0;
+                    if (start > count - OPTIONS_VISIBLE_COUNT)
+                        start = count - OPTIONS_VISIBLE_COUNT;
+                }
+
+                for (int row = 0; row < visible_count; row++) {
+                    int i = start + row;
                     uint16_t fg =
                         (i == s.selected_option_idx) ? THEME_BG : STATUS_FG;
                     uint16_t bg =
@@ -545,11 +583,35 @@ extern "C" void gui_task(void* arg) {
 
                     // Podfarbenie aktívneho riadku pre lepšiu viditeľnosť
                     if (i == s.selected_option_idx) {
-                        gui_draw_rect(10, 30 + i * 24, 200, 22, bg);
+                        gui_draw_rect(10, OPTIONS_LIST_Y + row * OPTIONS_ROW_H,
+                                     OPTIONS_ROW_W, 22, bg);
                     } else {
-                        gui_draw_rect(10, 30 + i * 24, 200, 22, THEME_BG);
+                        gui_draw_rect(10, OPTIONS_LIST_Y + row * OPTIONS_ROW_H,
+                                     OPTIONS_ROW_W, 22, THEME_BG);
                     }
-                    gui_draw_string(15, 33 + i * 24, options[i], fg, bg, 2);
+                    gui_draw_string(15, OPTIONS_LIST_Y + 3 + row * OPTIONS_ROW_H,
+                                    options[i], fg, bg, 2);
+                }
+
+                // Indikatory "je toho viac" - vzdy prekreslene (aj ked sa
+                // nezobrazia), aby nezostal stary sipkovy glyf na obrazovke
+                // po posune okna. Umiestnene napravo od textu (aj toho
+                // najdlhsieho), aby sa s nim nikdy neprekryvali.
+                if (count > OPTIONS_VISIBLE_COUNT) {
+                    gui_draw_rect(OPTIONS_INDICATOR_X, OPTIONS_LIST_Y - 12, 12,
+                                 10, THEME_BG);
+                    if (start > 0) {
+                        gui_draw_string(OPTIONS_INDICATOR_X, OPTIONS_LIST_Y - 12,
+                                        "^", COLOR_LIGHT_GRAY, THEME_BG, 1);
+                    }
+                    int list_bottom_y =
+                        OPTIONS_LIST_Y + visible_count * OPTIONS_ROW_H;
+                    gui_draw_rect(OPTIONS_INDICATOR_X, list_bottom_y, 12, 10,
+                                 THEME_BG);
+                    if (start + visible_count < count) {
+                        gui_draw_string(OPTIONS_INDICATOR_X, list_bottom_y, "v",
+                                        COLOR_LIGHT_GRAY, THEME_BG, 1);
+                    }
                 }
             } else {
                 // --- OBRAZOVKA 0: COMPARE (Senzor vs API, 2x2 grid) ---

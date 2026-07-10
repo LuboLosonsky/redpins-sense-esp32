@@ -28,6 +28,7 @@ typedef struct {
 
     bool display_rotated;  // Orientácia displeja (otočenie o 180°)
     bool auto_brightness;  // Adaptivny jas podla lux (BH1750)
+    uint8_t led_brightness_percent;  // Jas RGB LED indikatora (0-100)
 } app_config_t;
 
 // Inicializácia a načítanie nastavení z LittleFS
